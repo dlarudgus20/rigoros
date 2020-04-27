@@ -1,0 +1,5 @@
+# edimg gitignore
+
+*.o
+edimg
+edimg.exe
