@@ -24,6 +24,9 @@ TARGET_BINARY := $(DIR_BIN)/kernel.sys
 
 build: $(TARGET_BINARY)
 
+cleanimpl:
+	cargo clean
+
 $(RUST_OUTPUT_LIB):
 	cargo xbuild $(CARGO_FLAG)
 	$(TOOLSET_OBJDUMP) $(OBJDUMP_FLAGS) -D $(RUST_OUTPUT_LIB) > $(DIR_OBJ)/libkernel.disasm

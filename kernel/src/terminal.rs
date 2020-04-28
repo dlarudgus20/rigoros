@@ -1,5 +1,7 @@
+use core::fmt;
 use core::ptr::copy;
 use volatile::Volatile;
+use lazy_static::lazy_static;
 
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -63,15 +65,15 @@ pub struct Terminal {
     buffer: &'static mut Buffer,
 }
 
-impl Terminal {
-    pub fn create() -> Terminal {
-        Terminal {
-            cur_col: 0,
-            cur_row: 0,
-            buffer: unsafe { &mut *(0xffff80001feb8000 as *mut Buffer) }
-        }
-    }
+lazy_static! {
+    pub static ref TERM: spin::Mutex<Terminal> = spin::Mutex::new(Terminal {
+        cur_col: 0,
+        cur_row: 0,
+        buffer: unsafe { &mut *(0xffff80001feb8000 as *mut Buffer) }
+    });
+}
 
+impl Terminal {
     pub fn write_string(&mut self, color: ColorCode, s: &str) {
         for ch in s.bytes() {
             self.write_char(color, ch);
@@ -129,6 +131,13 @@ impl Terminal {
         out8(0x3d4 + 1, (pos & 0xff) as u8);
         out8(0x3d4, 0x0e);
         out8(0x3d4 + 1, (pos >> 8 & 0xff) as u8);
+    }
+}
+
+impl fmt::Write for Terminal {
+    fn write_str(&mut self, s: &str) -> fmt::Result {
+        self.write_string(ColorCode::DEFAULT, s);
+        Ok(())
     }
 }
 
