@@ -31,7 +31,7 @@ run: build
 
 dbg: debug
 debug: build
-	$(TOOLSET_QEMU) $(QEMU_FLAGS) -gdb tcp:127.0.0.1:1234 \
+	$(TOOLSET_QEMU) $(QEMU_FLAGS) -S -gdb tcp:127.0.0.1:1234 \
 		-fw_cfg name=opt/org.starrios.debug,string=1
 
 gdb:

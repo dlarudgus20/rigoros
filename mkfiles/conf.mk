@@ -1,22 +1,18 @@
-CONFIG ?= debug
+ifeq ($(CONFIG), debug)
+CFLAGS += -DDEBUG -ggdb
+ASFLAGS += -DDEBUG -g3
+else ifeq ($(CONFIG), release)
+CFLAGS += -DNDEBUG -O3 -flto
+ASFLAGS += -DNDEBUG
+endif
 
 CFLAGS += -ffreestanding -mcmodel=large -mno-red-zone -mno-mmx -mno-sse -mno-sse2 -fpack-struct \
 	-std=c99 -Wall -Wextra -Werror -Wno-unused-parameter -Wno-error=unused-variable -Wno-error=unused-function
 ASFLAGS +=
-LDFLAGS += -ffreestanding -nostdlib -Xlinker --gc-sections
+LDFLAGS += -ffreestanding -nostdlib -Xlinker --gc-sections -Xlinker --orphan-handling=error
 OBJDUMP_FLAGS +=
 # NM_FLAGS += --line-numbers --print-size --print-armap --numeric-sort
 NM_FLAGS += --print-size --print-armap --numeric-sort
-
-ifeq ($(CONFIG), debug)
-CFLAGS += -DDEBUG -ggdb
-ASFLAGS += -DDEBUG -ggdb
-else ifeq ($(CONFIG), release)
-CFLAGS += -DNDEBUG -O3 -flto
-ASFLAGS += -DNDEBUG
-else
-$(error [CONFIG] '$(CONFIG)': unknown configuration.)
-endif
 
 DIR_SRC := src
 DIR_BIN := bin/$(CONFIG)

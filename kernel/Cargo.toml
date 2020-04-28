@@ -4,6 +4,14 @@ version = "0.1.0"
 authors = ["ikh"]
 edition = "2018"
 
+[profile.dev]
+opt-level = 0
+debug = true
+
+[profile.release]
+opt-level = 3
+debug = false
+
 [lib]
 crate-type = [ "staticlib" ]
 
