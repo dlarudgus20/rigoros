@@ -161,71 +161,7 @@ floppy:
     jnz 0b
 
 done:
-    xor %ax, %ax
-    mov %ax, %es
-    mov $stage_start, %si
-    xor %ecx, %ecx
-    mov stage_sectors, %cx
-    shl $9, %ecx
-0:
-    mov %es:(%si), %bl
-    inc %si
-    jnz 1f
-    mov %es, %ax
-    inc %ax
-    mov %ax, %es
-1:
-    call send_lp
-    dec %ecx
-    jnz 0b
-
     jmp stage_start
-
-send_lp: // bl: data
-    push %cx
-    call wait_lp
-
-    mov $0x378, %dx
-    mov %bl, %al
-    out %al, %dx
-
-    mov $0x37a, %dx
-    in %dx, %al
-    mov %al, %ah
-
-    or $1, %al
-    out %al, %dx
-    mov %ah, %al
-
-    mov $0x86, %ah
-    xor %cx, %cx
-    mov $10, %dx
-    int $0x15
-
-    mov $0x37a, %dx
-    out %al, %dx
-
-    call wait_lp
-    pop %cx
-    ret
-
-wait_lp:
-    push %cx
-0:
-    mov $0x379, %dx
-    in %dx, %al
-    test $0x80, %al
-    jnz 1f
-
-    mov $0x86, %ah
-    xor %cx, %cx
-    mov $10, %dx
-    int $0x15
-
-    jmp 0b
-1:
-    pop %cx
-    ret
 
 panic:
     mov $2f, %si
@@ -254,7 +190,7 @@ stage_lba: .long 33
 
 stage_sectors: .word STAGE_SECTORS
 
-/*.org 440
+.org 440
 
 // disk signature
 .long 0
@@ -265,6 +201,6 @@ stage_sectors: .word STAGE_SECTORS
 .quad 0, 0
 .quad 0, 0
 .quad 0, 0
-*/.org 510
+
 // boot signature
 .byte 0x55, 0xaa
