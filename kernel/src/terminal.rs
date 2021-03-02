@@ -143,6 +143,6 @@ impl fmt::Write for Terminal {
 
 fn out8(port: u16, data: u8) {
     unsafe {
-        asm!("out %al, %dx" : : "{al}"(data), "{dx}"(port) : : "volatile");
+        asm!("out dx, al", in("al") data, in("dx") port, options(nomem, nostack));
     }
 }

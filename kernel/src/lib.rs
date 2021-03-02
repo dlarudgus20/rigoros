@@ -10,7 +10,7 @@ use terminal::TERM;
 
 #[no_mangle]
 pub extern "C" fn kmain() -> ! {
-    for i in 0..24 {
+    for i in 0..99 {
         writeln!(TERM.lock(), "fucking rust {}", i).unwrap();
     }
     loop {}

@@ -28,7 +28,7 @@ cleanimpl:
 	cargo clean
 
 $(RUST_OUTPUT_LIB):
-	cargo xbuild $(CARGO_FLAG)
+	cargo build $(CARGO_FLAG)
 	$(TOOLSET_OBJDUMP) $(OBJDUMP_FLAGS) -D $(RUST_OUTPUT_LIB) > $(DIR_OBJ)/libkernel.disasm
 
 $(TARGET_BINARY): $(TARGET_ELF)
