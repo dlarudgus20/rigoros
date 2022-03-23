@@ -6,6 +6,8 @@ use x86_64::structures::idt::{InterruptDescriptorTable, InterruptStackFrame, Pag
 lazy_static! {
     static ref IDT: InterruptDescriptorTable = {
         let mut idt = InterruptDescriptorTable::new();
+
+        // exceptions
         idt.divide_error.set_handler_fn(divide_error_handler);
         idt.debug.set_handler_fn(debug_handler);
         idt.non_maskable_interrupt.set_handler_fn(nmi_handler);
@@ -27,6 +29,11 @@ lazy_static! {
         idt.virtualization.set_handler_fn(virtualization_handler);
         idt.vmm_communication_exception.set_handler_fn(vmm_communication_exception_handler);
         idt.security_exception.set_handler_fn(security_exception_handler);
+
+        for i in 32..256 {
+            idt[i].set_handler_fn(unknown_handler);
+        }
+
         idt
     };
 }
@@ -36,17 +43,17 @@ pub fn init_idt() {
 }
 
 extern "x86-interrupt" fn divide_error_handler(stack_frame: InterruptStackFrame) {
-    println!("#DE {:?}", stack_frame);
+    println!("#DE {}", StackFrame(stack_frame));
     loop {}
 }
 
 extern "x86-interrupt" fn debug_handler(stack_frame: InterruptStackFrame) {
-    println!("#DB {:?}", stack_frame);
+    println!("#DB {}", StackFrame(stack_frame));
     loop {}
 }
 
 extern "x86-interrupt" fn nmi_handler(stack_frame: InterruptStackFrame) {
-    println!("#NMI {:?}", stack_frame);
+    println!("#NMI {}", StackFrame(stack_frame));
     loop {}
 }
 
@@ -55,87 +62,92 @@ extern "x86-interrupt" fn breakpoint_handler(stack_frame: InterruptStackFrame) {
 }
 
 extern "x86-interrupt" fn overflow_handler(stack_frame: InterruptStackFrame) {
-    println!("#OF {:?}", stack_frame);
+    println!("#OF {}", StackFrame(stack_frame));
     loop {}
 }
 
 extern "x86-interrupt" fn bound_range_exceeded_handler(stack_frame: InterruptStackFrame) {
-    println!("#BR {:?}", stack_frame);
+    println!("#BR {}", StackFrame(stack_frame));
     loop {}
 }
 
 extern "x86-interrupt" fn invalid_opcode_handler(stack_frame: InterruptStackFrame) {
-    println!("#UD {:?}", stack_frame);
+    println!("#UD {}", StackFrame(stack_frame));
     loop {}
 }
 
 extern "x86-interrupt" fn device_not_available_handler(stack_frame: InterruptStackFrame) {
-    println!("#NM {:?}", stack_frame);
+    println!("#NM {}", StackFrame(stack_frame));
     loop {}
 }
 
 extern "x86-interrupt" fn double_fault_handler(stack_frame: InterruptStackFrame, error_code: u64) -> ! {
-    println!("#DF:{:#018x} {:?}", error_code, stack_frame);
+    println!("#DF:{:#018x} {}", error_code, StackFrame(stack_frame));
     loop {}
 }
 
 extern "x86-interrupt" fn invalid_tss_handler(stack_frame: InterruptStackFrame, error_code: u64) {
-    println!("#TS:{:#018x} {:?}", error_code, stack_frame);
+    println!("#TS:{:#018x} {}", error_code, StackFrame(stack_frame));
     loop {}
 }
 
 extern "x86-interrupt" fn segment_not_present_handler(stack_frame: InterruptStackFrame, error_code: u64) {
-    println!("#NP:{:#018x} {:?}", error_code, stack_frame);
+    println!("#NP:{:#018x} {}", error_code, StackFrame(stack_frame));
     loop {}
 }
 
 extern "x86-interrupt" fn stack_segment_fault_handler(stack_frame: InterruptStackFrame, error_code: u64) {
-    println!("#SS:{:#018x} {:?}", error_code, stack_frame);
+    println!("#SS:{:#018x} {}", error_code, StackFrame(stack_frame));
     loop {}
 }
 
 extern "x86-interrupt" fn general_protection_fault_handler(stack_frame: InterruptStackFrame, error_code: u64) {
-    println!("#GP:{:#018x} {:?}", error_code, stack_frame);
+    println!("#GP:{:#018x} {}", error_code, StackFrame(stack_frame));
     loop {}
 }
 
 extern "x86-interrupt" fn page_fault_handler(stack_frame: InterruptStackFrame, error_code: PageFaultErrorCode) {
-    println!("#PF:{} {:?}", PFCode(error_code), stack_frame);
+    println!("#PF:{} {}", PFCode(error_code), StackFrame(stack_frame));
     loop {}
 }
 
 extern "x86-interrupt" fn x87_floating_point_handler(stack_frame: InterruptStackFrame) {
-    println!("#MF {:?}", stack_frame);
+    println!("#MF {}", StackFrame(stack_frame));
     loop {}
 }
 
 extern "x86-interrupt" fn alignment_check_handler(stack_frame: InterruptStackFrame, error_code: u64) {
-    println!("#AC:{:#018x} {:?}", error_code, stack_frame);
+    println!("#AC:{:#018x} {}", error_code, StackFrame(stack_frame));
     loop {}
 }
 
 extern "x86-interrupt" fn machine_check_handler(stack_frame: InterruptStackFrame) -> ! {
-    println!("#MC {:?}", stack_frame);
+    println!("#MC {}", StackFrame(stack_frame));
     loop {}
 }
 
 extern "x86-interrupt" fn simd_floating_point_handler(stack_frame: InterruptStackFrame) {
-    println!("#XF {:?}", stack_frame);
+    println!("#XF {}", StackFrame(stack_frame));
     loop {}
 }
 
 extern "x86-interrupt" fn virtualization_handler(stack_frame: InterruptStackFrame) {
-    println!("#VE {:?}", stack_frame);
+    println!("#VE {}", StackFrame(stack_frame));
     loop {}
 }
 
 extern "x86-interrupt" fn vmm_communication_exception_handler(stack_frame: InterruptStackFrame, error_code: u64) {
-    println!("#VC:{:#018x} {:?}", error_code, stack_frame);
+    println!("#VC:{:#018x} {}", error_code, StackFrame(stack_frame));
     loop {}
 }
 
 extern "x86-interrupt" fn security_exception_handler(stack_frame: InterruptStackFrame, error_code: u64) {
-    println!("#SX:{:#018x} {:?}", error_code, stack_frame);
+    println!("#SX:{:#018x} {}", error_code, StackFrame(stack_frame));
+    loop {}
+}
+
+extern "x86-interrupt" fn unknown_handler(stack_frame: InterruptStackFrame) {
+    println!("#UNKNOWN {}", StackFrame(stack_frame));
     loop {}
 }
 
