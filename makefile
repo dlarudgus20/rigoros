@@ -1,6 +1,5 @@
 all: build
 
-include mkfiles/toolset.mk
 include mkfiles/conf.mk
 
 TOOLS_EDIMG := tools/edimg/edimg
@@ -28,6 +27,8 @@ rebuild: clean build
 
 run: build
 	$(TOOLSET_QEMU) $(QEMU_FLAGS)
+
+rerun: clean run
 
 dbg: debug
 debug: build

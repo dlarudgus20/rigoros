@@ -1,5 +1,5 @@
+use core::arch::asm;
 use core::fmt;
-use core::ptr::copy;
 use volatile::Volatile;
 use lazy_static::lazy_static;
 
@@ -54,22 +54,19 @@ const BUFFER_WIDTH: usize = 80;
 
 const SCREEN_HEIGHT: usize = 24;
 
-#[repr(transparent)]
-struct Buffer {
-    chars: [[Volatile<ScreenChar>; BUFFER_WIDTH]; BUFFER_HEIGHT],
-}
+type Buffer = [[ScreenChar; BUFFER_WIDTH]; BUFFER_HEIGHT];
 
 pub struct Terminal {
     cur_col: usize,
     cur_row: usize,
-    buffer: &'static mut Buffer,
+    buffer: Volatile<&'static mut Buffer>,
 }
 
 lazy_static! {
     pub static ref TERM: spin::Mutex<Terminal> = spin::Mutex::new(Terminal {
         cur_col: 0,
         cur_row: 0,
-        buffer: unsafe { &mut *(0xffff80001feb8000 as *mut Buffer) }
+        buffer: Volatile::new(unsafe { &mut *(0xffff80001feb8000 as *mut Buffer) })
     });
 }
 
@@ -87,7 +84,7 @@ impl Terminal {
                 self.new_line();
             }
             ch => {
-                self.buffer.chars[self.cur_row][self.cur_col].write(ScreenChar {
+                self.buffer.map_mut(|x| &mut x[self.cur_row][self.cur_col]).write(ScreenChar {
                     character: ch,
                     color: color
                 });
@@ -116,12 +113,16 @@ impl Terminal {
             self.cur_row -= 1;
         }
 
-        unsafe {
-            copy(&self.buffer.chars[1], &mut self.buffer.chars[0], SCREEN_HEIGHT - 1);
+        //self.buffer.copy_within(1..SCREEN_HEIGHT, 0);
+        for row in 0..(SCREEN_HEIGHT - 1) {
+            let line = self.buffer.map(|x| &x[row + 1]).read();
+            self.buffer.map_mut(|x| &mut x[row]).write(line);
         }
+
         let empty = ScreenChar { character: 0, color: ColorCode::DEFAULT };
-        for item in self.buffer.chars[SCREEN_HEIGHT - 1].iter_mut() {
-            item.write(empty);
+        let mut lastrow = self.buffer.map_mut(|x| &mut x[SCREEN_HEIGHT - 1]);
+        for col in 0..BUFFER_WIDTH {
+            lastrow.map_mut(|x| &mut x[col]).write(empty)
         }
     }
 

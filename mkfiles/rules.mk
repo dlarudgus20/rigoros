@@ -17,7 +17,7 @@ LD_SCRIPT := linker.ld
 
 TARGET_ELF := $(DIR_BIN)/$(TARGET_NAME).elf
 
-PHONY_TARGETS += all build rebuild mostlyclean clean cleanimpl
+PHONY_TARGETS += all build rebuild mostlyclean clean distclean cleanimpl
 .PHONY: $(PHONY_TARGETS)
 
 rebuild:

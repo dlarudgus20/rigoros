@@ -1,7 +1,5 @@
 #![no_std]
 
-#![feature(asm)]
-
 mod terminal;
 
 use core::fmt::Write;
