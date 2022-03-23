@@ -1,7 +1,7 @@
-use core::arch::asm;
 use core::fmt;
 use volatile::Volatile;
 use lazy_static::lazy_static;
+use x86_64::instructions::port::Port;
 
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -49,24 +49,24 @@ struct ScreenChar {
     color: ColorCode
 }
 
-const BUFFER_HEIGHT: usize = 25;
-const BUFFER_WIDTH: usize = 80;
+const VIDEO_HEIGHT: usize = 25;
+const VIDEO_WIDTH: usize = 80;
 
 const SCREEN_HEIGHT: usize = 24;
 
-type Buffer = [[ScreenChar; BUFFER_WIDTH]; BUFFER_HEIGHT];
+type VideoBuffer = [[ScreenChar; VIDEO_WIDTH]; VIDEO_HEIGHT];
 
 pub struct Terminal {
     cur_col: usize,
     cur_row: usize,
-    buffer: Volatile<&'static mut Buffer>,
+    video: Volatile<&'static mut VideoBuffer>,
 }
 
 lazy_static! {
     pub static ref TERM: spin::Mutex<Terminal> = spin::Mutex::new(Terminal {
         cur_col: 0,
         cur_row: 0,
-        buffer: Volatile::new(unsafe { &mut *(0xffff80001feb8000 as *mut Buffer) })
+        video: Volatile::new(unsafe { &mut *(0xffff80001feb8000 as *mut VideoBuffer) })
     });
 }
 
@@ -84,13 +84,15 @@ impl Terminal {
                 self.new_line();
             }
             ch => {
-                self.buffer.map_mut(|x| &mut x[self.cur_row][self.cur_col]).write(ScreenChar {
+                let ch = ScreenChar {
                     character: ch,
                     color: color
-                });
+                };
+
+                self.video.map_mut(|x| &mut x[self.cur_row][self.cur_col]).write(ch);
 
                 self.cur_col += 1;
-                if self.cur_col >= BUFFER_WIDTH {
+                if self.cur_col >= VIDEO_WIDTH {
                     self.new_line();
                 }
             }
@@ -108,30 +110,34 @@ impl Terminal {
     fn scroll(&mut self) {
         if self.cur_row == 0 {
             self.cur_col = 0;
-        }
-        else {
+        } else {
             self.cur_row -= 1;
         }
 
-        //self.buffer.copy_within(1..SCREEN_HEIGHT, 0);
+        //self.video.copy_within(1..SCREEN_HEIGHT, 0);
         for row in 0..(SCREEN_HEIGHT - 1) {
-            let line = self.buffer.map(|x| &x[row + 1]).read();
-            self.buffer.map_mut(|x| &mut x[row]).write(line);
+            let line = self.video.map(|x| &x[row + 1]).read();
+            self.video.map_mut(|x| &mut x[row]).write(line);
         }
 
         let empty = ScreenChar { character: 0, color: ColorCode::DEFAULT };
-        let mut lastrow = self.buffer.map_mut(|x| &mut x[SCREEN_HEIGHT - 1]);
-        for col in 0..BUFFER_WIDTH {
+        let mut lastrow = self.video.map_mut(|x| &mut x[SCREEN_HEIGHT - 1]);
+        for col in 0..VIDEO_WIDTH {
             lastrow.map_mut(|x| &mut x[col]).write(empty)
         }
     }
 
     fn update_cursor(&self) {
-        let pos = self.cur_row * BUFFER_WIDTH + self.cur_col;
-        out8(0x3d4, 0x0f);
-        out8(0x3d4 + 1, (pos & 0xff) as u8);
-        out8(0x3d4, 0x0e);
-        out8(0x3d4 + 1, (pos >> 8 & 0xff) as u8);
+        unsafe {
+            let mut port1 = Port::<u8>::new(0x3d4);
+            let mut port2 = Port::<u8>::new(0x3d5);
+
+            let pos = self.cur_row * VIDEO_WIDTH + self.cur_col;
+            port1.write(0x0f);
+            port2.write((pos & 0xff) as u8);
+            port1.write(0x0e);
+            port2.write((pos >> 8 & 0xff) as u8);
+        }
     }
 }
 
@@ -139,11 +145,5 @@ impl fmt::Write for Terminal {
     fn write_str(&mut self, s: &str) -> fmt::Result {
         self.write_string(ColorCode::DEFAULT, s);
         Ok(())
-    }
-}
-
-fn out8(port: u16, data: u8) {
-    unsafe {
-        asm!("out dx, al", in("al") data, in("dx") port, options(nomem, nostack));
     }
 }
