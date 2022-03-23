@@ -66,7 +66,7 @@ lazy_static! {
     pub static ref TERM: spin::Mutex<Terminal> = spin::Mutex::new(Terminal {
         cur_col: 0,
         cur_row: 0,
-        video: Volatile::new(unsafe { &mut *(0xffff80001feb8000 as *mut VideoBuffer) })
+        video: Volatile::new(unsafe { &mut *(0xffff80001feb8000 as *mut VideoBuffer) }),
     });
 }
 
@@ -146,4 +146,21 @@ impl fmt::Write for Terminal {
         self.write_string(ColorCode::DEFAULT, s);
         Ok(())
     }
+}
+
+#[macro_export]
+macro_rules! print {
+    ($($arg:tt)*) => ($crate::terminal::_print(format_args!($($arg)*)));
+}
+
+#[macro_export]
+macro_rules! println {
+    () => ($crate::print!("\n"));
+    ($($arg:tt)*) => ($crate::print!("{}\n", format_args!($($arg)*)));
+}
+
+#[doc(hidden)]
+pub fn _print(args: fmt::Arguments) {
+    use core::fmt::Write;
+    TERM.lock().write_fmt(args).unwrap();
 }
