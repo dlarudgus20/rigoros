@@ -2,6 +2,7 @@ use core::fmt;
 use lazy_static::lazy_static;
 use x86_64::structures::idt::{InterruptDescriptorTable, InterruptStackFrame, PageFaultErrorCode};
 
+use crate::halt_loop;
 use crate::println;
 use crate::gdt;
 use crate::pic::Irq;
@@ -55,17 +56,17 @@ pub fn init_idt() {
 
 extern "x86-interrupt" fn divide_error_handler(stack_frame: InterruptStackFrame) {
     println!("#DE {}", StackFrame(stack_frame));
-    loop {}
+    halt_loop();
 }
 
 extern "x86-interrupt" fn debug_handler(stack_frame: InterruptStackFrame) {
     println!("#DB {}", StackFrame(stack_frame));
-    loop {}
+    halt_loop();
 }
 
 extern "x86-interrupt" fn nmi_handler(stack_frame: InterruptStackFrame) {
     println!("#NMI {}", StackFrame(stack_frame));
-    loop {}
+    halt_loop();
 }
 
 extern "x86-interrupt" fn breakpoint_handler(stack_frame: InterruptStackFrame) {
@@ -74,92 +75,92 @@ extern "x86-interrupt" fn breakpoint_handler(stack_frame: InterruptStackFrame) {
 
 extern "x86-interrupt" fn overflow_handler(stack_frame: InterruptStackFrame) {
     println!("#OF {}", StackFrame(stack_frame));
-    loop {}
+    halt_loop();
 }
 
 extern "x86-interrupt" fn bound_range_exceeded_handler(stack_frame: InterruptStackFrame) {
     println!("#BR {}", StackFrame(stack_frame));
-    loop {}
+    halt_loop();
 }
 
 extern "x86-interrupt" fn invalid_opcode_handler(stack_frame: InterruptStackFrame) {
     println!("#UD {}", StackFrame(stack_frame));
-    loop {}
+    halt_loop();
 }
 
 extern "x86-interrupt" fn device_not_available_handler(stack_frame: InterruptStackFrame) {
     println!("#NM {}", StackFrame(stack_frame));
-    loop {}
+    halt_loop();
 }
 
 extern "x86-interrupt" fn double_fault_handler(stack_frame: InterruptStackFrame, error_code: u64) -> ! {
     println!("#DF:{:#018x} {}", error_code, StackFrame(stack_frame));
-    loop {}
+    halt_loop();
 }
 
 extern "x86-interrupt" fn invalid_tss_handler(stack_frame: InterruptStackFrame, error_code: u64) {
     println!("#TS:{:#018x} {}", error_code, StackFrame(stack_frame));
-    loop {}
+    halt_loop();
 }
 
 extern "x86-interrupt" fn segment_not_present_handler(stack_frame: InterruptStackFrame, error_code: u64) {
     println!("#NP:{:#018x} {}", error_code, StackFrame(stack_frame));
-    loop {}
+    halt_loop();
 }
 
 extern "x86-interrupt" fn stack_segment_fault_handler(stack_frame: InterruptStackFrame, error_code: u64) {
     println!("#SS:{:#018x} {}", error_code, StackFrame(stack_frame));
-    loop {}
+    halt_loop();
 }
 
 extern "x86-interrupt" fn general_protection_fault_handler(stack_frame: InterruptStackFrame, error_code: u64) {
     println!("#GP:{:#018x} {}", error_code, StackFrame(stack_frame));
-    loop {}
+    halt_loop();
 }
 
 extern "x86-interrupt" fn page_fault_handler(stack_frame: InterruptStackFrame, error_code: PageFaultErrorCode) {
     println!("#PF:{} {}", PFCode(error_code), StackFrame(stack_frame));
-    loop {}
+    halt_loop();
 }
 
 extern "x86-interrupt" fn x87_floating_point_handler(stack_frame: InterruptStackFrame) {
     println!("#MF {}", StackFrame(stack_frame));
-    loop {}
+    halt_loop();
 }
 
 extern "x86-interrupt" fn alignment_check_handler(stack_frame: InterruptStackFrame, error_code: u64) {
     println!("#AC:{:#018x} {}", error_code, StackFrame(stack_frame));
-    loop {}
+    halt_loop();
 }
 
 extern "x86-interrupt" fn machine_check_handler(stack_frame: InterruptStackFrame) -> ! {
     println!("#MC {}", StackFrame(stack_frame));
-    loop {}
+    halt_loop();
 }
 
 extern "x86-interrupt" fn simd_floating_point_handler(stack_frame: InterruptStackFrame) {
     println!("#XF {}", StackFrame(stack_frame));
-    loop {}
+    halt_loop();
 }
 
 extern "x86-interrupt" fn virtualization_handler(stack_frame: InterruptStackFrame) {
     println!("#VE {}", StackFrame(stack_frame));
-    loop {}
+    halt_loop();
 }
 
 extern "x86-interrupt" fn vmm_communication_exception_handler(stack_frame: InterruptStackFrame, error_code: u64) {
     println!("#VC:{:#018x} {}", error_code, StackFrame(stack_frame));
-    loop {}
+    halt_loop();
 }
 
 extern "x86-interrupt" fn security_exception_handler(stack_frame: InterruptStackFrame, error_code: u64) {
     println!("#SX:{:#018x} {}", error_code, StackFrame(stack_frame));
-    loop {}
+    halt_loop();
 }
 
 extern "x86-interrupt" fn unknown_handler(stack_frame: InterruptStackFrame) {
     println!("#UNKNOWN {}", StackFrame(stack_frame));
-    loop {}
+    halt_loop();
 }
 
 struct StackFrame(InterruptStackFrame);

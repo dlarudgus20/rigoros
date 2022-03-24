@@ -33,11 +33,17 @@ pub extern "C" fn kmain() -> ! {
     println!("interrupt enabled");
 
     println!("done");
-    loop {}
+    halt_loop();
 }
 
 #[panic_handler]
 fn panic(_info: &PanicInfo) -> ! {
     println!("panic!!");
-    loop {}
+    halt_loop();
+}
+
+pub fn halt_loop() -> ! {
+    loop {
+        x86_64::instructions::hlt();
+    }
 }
