@@ -4,9 +4,11 @@ use x86_64::structures::idt::{InterruptDescriptorTable, InterruptStackFrame, Pag
 
 use crate::println;
 use crate::gdt;
+use crate::pic::Irq;
+use crate::pit::timer_handler;
 
 lazy_static! {
-    static ref IDT: InterruptDescriptorTable = {
+    pub static ref IDT: InterruptDescriptorTable = {
         let mut idt = InterruptDescriptorTable::new();
 
         // exceptions
@@ -35,9 +37,13 @@ lazy_static! {
         idt.vmm_communication_exception.set_handler_fn(vmm_communication_exception_handler);
         idt.security_exception.set_handler_fn(security_exception_handler);
 
+        // unknown
         for i in 32..256 {
             idt[i].set_handler_fn(unknown_handler);
         }
+
+        // pic
+        idt[Irq::TIMER.as_intn()].set_handler_fn(timer_handler);
 
         idt
     };

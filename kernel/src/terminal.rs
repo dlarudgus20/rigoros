@@ -2,6 +2,7 @@ use core::fmt;
 use volatile::Volatile;
 use lazy_static::lazy_static;
 use x86_64::instructions::port::Port;
+use x86_64::instructions::interrupts::without_interrupts;
 
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -56,14 +57,14 @@ const SCREEN_HEIGHT: usize = 24;
 
 type VideoBuffer = [[ScreenChar; VIDEO_WIDTH]; VIDEO_HEIGHT];
 
-pub struct Terminal {
+struct Terminal {
     cur_col: usize,
     cur_row: usize,
     video: Volatile<&'static mut VideoBuffer>,
 }
 
 lazy_static! {
-    pub static ref TERM: spin::Mutex<Terminal> = spin::Mutex::new(Terminal {
+    static ref TERM: spin::Mutex<Terminal> = spin::Mutex::new(Terminal {
         cur_col: 0,
         cur_row: 0,
         video: Volatile::new(unsafe { &mut *(0xffff80001feb8000 as *mut VideoBuffer) }),
@@ -162,5 +163,7 @@ macro_rules! println {
 #[doc(hidden)]
 pub fn _print(args: fmt::Arguments) {
     use core::fmt::Write;
-    TERM.lock().write_fmt(args).unwrap();
+    without_interrupts(|| {
+        TERM.lock().write_fmt(args).unwrap();
+    });
 }

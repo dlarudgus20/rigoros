@@ -1,4 +1,4 @@
-# Starrios gitignore
+# rigoros
 
 bin/
 obj/
@@ -7,11 +7,22 @@ dep/
 bochsout.txt
 parport.out
 
-# Rust gitignore
+# VSCode
+
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+!.vscode/*.code-snippets
+
+.history/
+
+# Rust
 
 target/
 
-# Windows gitignore
+# Windows
 
 Thumbs.db
 Desktop.ini

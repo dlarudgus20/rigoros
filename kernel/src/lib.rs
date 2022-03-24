@@ -1,9 +1,12 @@
 #![no_std]
 #![feature(abi_x86_interrupt)]
+#![feature(const_mut_refs)]
 
-mod terminal;
-mod interrupts;
-mod gdt;
+pub mod terminal;
+pub mod idt;
+pub mod gdt;
+pub mod pic;
+pub mod pit;
 
 use core::panic::PanicInfo;
 
@@ -14,8 +17,20 @@ pub extern "C" fn kmain() -> ! {
     gdt::init_gdt();
     println!("gdt initialized");
 
-    interrupts::init_idt();
+    idt::init_idt();
     println!("idt initialized");
+
+    pic::init_pic();
+    println!("pic initialized");
+
+    pit::init_pit();
+    println!("pit initialized");
+
+    unsafe {
+        pic::set_mask(pic::Mask::TIMER | pic::Mask::SLAVE);
+    }
+    x86_64::instructions::interrupts::enable();
+    println!("interrupt enabled");
 
     println!("done");
     loop {}
