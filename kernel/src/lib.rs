@@ -17,8 +17,6 @@ pub extern "C" fn kmain() -> ! {
     interrupts::init_idt();
     println!("idt initialized");
 
-    unsafe { core::arch::asm!("int3"); }
-
     println!("done");
     loop {}
 }
