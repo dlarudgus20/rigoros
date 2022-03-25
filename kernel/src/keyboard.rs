@@ -4,7 +4,7 @@ use x86_64::structures::idt::InterruptStackFrame;
 use x86_64::instructions::port::Port;
 use pc_keyboard::{layouts, DecodedKey, HandleControl, Keyboard, ScancodeSet1};
 
-use crate::print;
+use crate::{print, println};
 use crate::pic::{Irq, send_eoi};
 use crate::interrupt_queue::{InterruptMessage, intmsg_push};
 
@@ -23,11 +23,13 @@ pub fn init_keyboard() {
 pub fn keyboard_handler(data: u8) {
     let mut keyboard = KEYBOARD.lock();
 
+    print!("{:#2x} ", data);
+
     if let Ok(Some(evt)) = keyboard.add_byte(data) {
         if let Some(key) = keyboard.process_keyevent(evt) {
             match key {
-                DecodedKey::Unicode(ch) => print!("{}", ch),
-                DecodedKey::RawKey(key) => print!("{:?}", key),
+                DecodedKey::Unicode(ch) => println!("{}", ch),
+                DecodedKey::RawKey(key) => println!("{:?}", key),
             }
         }
     }
