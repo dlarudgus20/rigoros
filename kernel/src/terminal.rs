@@ -1,6 +1,7 @@
 use core::fmt;
 use volatile::Volatile;
 use lazy_static::lazy_static;
+use spin::Mutex;
 use x86_64::instructions::port::Port;
 use x86_64::instructions::interrupts::without_interrupts;
 
@@ -64,7 +65,7 @@ struct Terminal {
 }
 
 lazy_static! {
-    static ref TERM: spin::Mutex<Terminal> = spin::Mutex::new(Terminal {
+    static ref TERM: Mutex<Terminal> = Mutex::new(Terminal {
         cur_col: 0,
         cur_row: 0,
         video: Volatile::new(unsafe { &mut *(0xffff80001feb8000 as *mut VideoBuffer) }),
