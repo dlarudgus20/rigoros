@@ -16,6 +16,7 @@ use crate::interrupt_queue::{InterruptMessage, intmsg_pop};
 #[no_mangle]
 pub extern "C" fn kmain() -> ! {
     terminal::init_term();
+    terminal::set_status_lines_back(1);
     log!("terminal initialized");
 
     gdt::init_gdt();

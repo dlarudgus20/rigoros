@@ -31,3 +31,7 @@ pc-keyboard = "0.5.1"
 [dependencies.lazy_static]
 version = "1.4.0"
 features = ["spin_no_std"]
+
+[dependencies.core2]
+version = "0.3.1"
+default-features = false
