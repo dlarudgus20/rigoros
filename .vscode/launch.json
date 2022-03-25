@@ -11,8 +11,6 @@
             "program": "${workspaceFolder}/kernel/bin/debug/kernel.elf",
             "cwd": "${workspaceFolder}",
             "miDebuggerServerAddress": "localhost:1234",
-            "miDebuggerPath": "rust-gdb",
-            "MIMode": "gdb",
             "setupCommands": [
                 {
                     "text": "-enable-pretty-printing",

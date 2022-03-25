@@ -11,35 +11,35 @@ pub mod pit;
 pub mod keyboard;
 pub mod ring_buffer;
 
-use core::panic::PanicInfo;
 use crate::interrupt_queue::{InterruptMessage, intmsg_pop};
 
 #[no_mangle]
 pub extern "C" fn kmain() -> ! {
-    println!("terminal initialized");
+    terminal::init_term();
+    log!("terminal initialized");
 
     gdt::init_gdt();
-    println!("gdt initialized");
+    log!("gdt initialized");
 
     idt::init_idt();
-    println!("idt initialized");
+    log!("idt initialized");
 
     pic::init_pic();
-    println!("pic initialized");
+    log!("pic initialized");
 
     pit::init_pit();
-    println!("pit initialized");
+    log!("pit initialized");
 
     keyboard::init_keyboard();
-    println!("keyboard initialized");
+    log!("keyboard initialized");
 
     unsafe {
         pic::set_mask(pic::Mask::TIMER | pic::Mask::KEYBOARD | pic::Mask::SLAVE);
     }
     x86_64::instructions::interrupts::enable();
-    println!("interrupt enabled");
+    log!("interrupt enabled");
 
-    println!("done");
+    log!("done");
 
     loop {
         match intmsg_pop() {
@@ -48,12 +48,6 @@ pub extern "C" fn kmain() -> ! {
             _ => x86_64::instructions::hlt(),
         }
     }
-}
-
-#[panic_handler]
-fn panic(_info: &PanicInfo) -> ! {
-    println!("panic!!");
-    halt_loop();
 }
 
 pub fn halt_loop() -> ! {

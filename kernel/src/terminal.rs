@@ -1,9 +1,13 @@
 use core::fmt;
+use core::panic::PanicInfo;
 use volatile::Volatile;
 use lazy_static::lazy_static;
 use spin::Mutex;
 use x86_64::instructions::port::Port;
 use x86_64::instructions::interrupts::without_interrupts;
+
+use crate::halt_loop;
+use crate::ring_buffer::RingBuffer;
 
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -46,38 +50,97 @@ impl ColorCode {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(C)]
-struct ScreenChar {
+struct VideoChar {
     character: u8,
     color: ColorCode
 }
 
-const VIDEO_HEIGHT: usize = 25;
-const VIDEO_WIDTH: usize = 80;
-
-const SCREEN_HEIGHT: usize = 24;
-
-type VideoBuffer = [[ScreenChar; VIDEO_WIDTH]; VIDEO_HEIGHT];
+type VideoRow = [VideoChar; VIDEO_WIDTH];
+type VideoBuffer = [VideoRow; VIDEO_HEIGHT];
 
 struct Terminal {
     cur_col: usize,
     cur_row: usize,
+    scr_row: usize,
+
+    status_front_len: usize,
+    status_back_len: usize,
+
+    buffer: RingBuffer<'static, VideoRow>,
     video: Volatile<&'static mut VideoBuffer>,
 }
 
+struct TerminalWriter<'a>(&'a mut Terminal, ColorCode);
+
+const VIDEO_HEIGHT: usize = 25;
+const VIDEO_WIDTH: usize = 80;
+
+const BUFFER_HEIGHT: usize = 256;
+
+const EMPTY_CHAR: VideoChar = VideoChar { character: 0, color: ColorCode::DEFAULT };
+const EMPTY_ROW: VideoRow = [EMPTY_CHAR; VIDEO_WIDTH];
+
 lazy_static! {
-    static ref TERM: Mutex<Terminal> = Mutex::new(Terminal {
-        cur_col: 0,
-        cur_row: 0,
-        video: Volatile::new(unsafe { &mut *(0xffff80001feb8000 as *mut VideoBuffer) }),
+    static ref TERM: Mutex<Terminal> = Mutex::new(unsafe {
+        static mut BUFFER: [VideoRow; BUFFER_HEIGHT] = [EMPTY_ROW; BUFFER_HEIGHT];
+        Terminal {
+            cur_col: 0,
+            cur_row: 0,
+            scr_row: 0,
+            status_front_len: 0,
+            status_back_len: 0,
+            buffer: RingBuffer::new(&mut BUFFER),
+            video: Volatile::new(&mut *(0xffff80001feb8000 as *mut VideoBuffer)),
+        }
     });
 }
 
+pub fn init_term() {
+    let mut term = TERM.lock();
+    term.clear();
+}
+
 impl Terminal {
+    pub fn clear(&mut self) {
+        self.buffer.push_force(EMPTY_ROW);
+
+        self.cur_col = 0;
+        self.cur_row = self.buffer.len() - 1;
+        self.scr_row = self.cur_row;
+
+        self.scroll_to_cursor();
+    }
+
     pub fn write_string(&mut self, color: ColorCode, s: &str) {
         for ch in s.bytes() {
             self.write_char(color, ch);
         }
         self.update_cursor();
+    }
+
+    fn redraw_screen(&mut self) {
+        let scrlen = self.screen_height();
+
+        for row in 0..scrlen {
+            let line = *self.buffer.get(self.scr_row + row).unwrap_or(&EMPTY_ROW);
+            self.video_row_mut(self.screen_start() + row).write(line);
+        }
+    }
+
+    fn screen_start(&self) -> usize {
+        self.status_front_len
+    }
+
+    fn screen_height(&self) -> usize {
+        VIDEO_HEIGHT - self.status_front_len - self.status_back_len
+    }
+
+    fn video_row_mut(&mut self, row: usize) -> Volatile<&mut VideoRow> {
+        self.video.map_mut(|x| &mut x[row])
+    }
+
+    fn video_ch_mut(&mut self, row: usize, col: usize) -> Volatile<&mut VideoChar> {
+        self.video.map_mut(|x| &mut x[row][col])
     }
 
     fn write_char(&mut self, color: ColorCode, ch: u8) {
@@ -86,16 +149,22 @@ impl Terminal {
                 self.new_line();
             }
             ch => {
-                let ch = ScreenChar {
+                let ch = VideoChar {
                     character: ch,
                     color: color
                 };
 
-                self.video.map_mut(|x| &mut x[self.cur_row][self.cur_col]).write(ch);
+                self.buffer[self.cur_row][self.cur_col] = ch;
+                if self.cursor_visible() {
+                    let row = self.cur_row - self.scr_row;
+                    self.video_ch_mut(row as usize, self.cur_col).write(ch);
+                }
 
                 self.cur_col += 1;
                 if self.cur_col >= VIDEO_WIDTH {
                     self.new_line();
+                } else {
+                    self.scroll_to_cursor();
                 }
             }
         }
@@ -104,29 +173,28 @@ impl Terminal {
     fn new_line(&mut self) {
         self.cur_col = 0;
         self.cur_row += 1;
-        if self.cur_row >= SCREEN_HEIGHT {
-            self.scroll();
+        self.buffer.insert_force(self.cur_row, EMPTY_ROW);
+        self.scroll_to_cursor();
+    }
+
+    fn cursor_visible(&self) -> bool {
+        let scrlen = self.screen_height();
+        self.scr_row <= self.cur_row && self.cur_row < self.scr_row + scrlen
+    }
+
+    fn scroll_to_cursor(&mut self) {
+        let scrlen = self.screen_height();
+
+        if self.cur_row < self.scr_row {
+            self.scroll_to(self.cur_row);
+        } else if self.cur_row >= self.scr_row + scrlen {
+            self.scroll_to(self.cur_row - scrlen + 1);
         }
     }
 
-    fn scroll(&mut self) {
-        if self.cur_row == 0 {
-            self.cur_col = 0;
-        } else {
-            self.cur_row -= 1;
-        }
-
-        //self.video.copy_within(1..SCREEN_HEIGHT, 0);
-        for row in 0..(SCREEN_HEIGHT - 1) {
-            let line = self.video.map(|x| &x[row + 1]).read();
-            self.video.map_mut(|x| &mut x[row]).write(line);
-        }
-
-        let empty = ScreenChar { character: 0, color: ColorCode::DEFAULT };
-        let mut lastrow = self.video.map_mut(|x| &mut x[SCREEN_HEIGHT - 1]);
-        for col in 0..VIDEO_WIDTH {
-            lastrow.map_mut(|x| &mut x[col]).write(empty)
-        }
+    fn scroll_to(&mut self, row: usize) {
+        self.scr_row = row;
+        self.redraw_screen();
     }
 
     fn update_cursor(&self) {
@@ -143,28 +211,43 @@ impl Terminal {
     }
 }
 
-impl fmt::Write for Terminal {
+impl<'a> fmt::Write for TerminalWriter<'a> {
     fn write_str(&mut self, s: &str) -> fmt::Result {
-        self.write_string(ColorCode::DEFAULT, s);
+        self.0.write_string(self.1, s);
         Ok(())
     }
 }
 
 #[macro_export]
 macro_rules! print {
-    ($($arg:tt)*) => ($crate::terminal::_print(format_args!($($arg)*)));
+    (color: $c:expr, $($arg:tt)*) => ($crate::terminal::_print(Some($c), format_args!($($arg)*)));
+    ($($arg:tt)*) => ($crate::terminal::_print(None, format_args!($($arg)*)));
 }
 
 #[macro_export]
 macro_rules! println {
     () => ($crate::print!("\n"));
+    (color: $c:expr, $($arg:tt)*) => ($crate::print!(color: $c, "{}\n", format_args!($($arg)*)));
     ($($arg:tt)*) => ($crate::print!("{}\n", format_args!($($arg)*)));
 }
 
+#[macro_export]
+macro_rules! log {
+    ($($arg:tt)*) => ($crate::println!(color: $crate::terminal::ColorCode::LOG, $($arg)*));
+}
+
 #[doc(hidden)]
-pub fn _print(args: fmt::Arguments) {
+pub fn _print(color: Option<ColorCode>, args: fmt::Arguments) {
     use core::fmt::Write;
     without_interrupts(|| {
-        TERM.lock().write_fmt(args).unwrap();
+        let mut term = TERM.lock();
+        let c = color.unwrap_or(ColorCode::DEFAULT);
+        TerminalWriter(&mut term, c).write_fmt(args).unwrap();
     });
+}
+
+#[panic_handler]
+fn panic(_info: &PanicInfo) -> ! {
+    println!(color: ColorCode::PANIC, "panic!!");
+    halt_loop();
 }
