@@ -53,7 +53,7 @@ lazy_static! {
     };
 }
 
-pub fn init_idt() {
+pub unsafe fn init_idt() {
     IDT.load();
 }
 

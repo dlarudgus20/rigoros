@@ -15,17 +15,15 @@ const PIT_CTRL_LSBMSBRW: u8 = 0x00;
 const PIT_CTRL_MODE0: u8 = 0x00;
 const PIT_CTRL_BINARY: u8 = 0x00;
 
-pub fn init_pit() {
+pub unsafe fn init_pit() {
     let mut ctrl = Port::new(PIT_PORT_CTRL);
     let mut cnt0 = Port::new(PIT_PORT_CNT0);
 
     let count = (PIT_FREQ / TIMER_FREQ) as u16;
 
-    unsafe {
-        ctrl.write(PIT_CTRL_CNT0 | PIT_CTRL_LSBMSBRW | PIT_CTRL_MODE0 | PIT_CTRL_BINARY);
-        cnt0.write(count as u8);
-        cnt0.write((count >> 8) as u8);
-    }
+    ctrl.write(PIT_CTRL_CNT0 | PIT_CTRL_LSBMSBRW | PIT_CTRL_MODE0 | PIT_CTRL_BINARY);
+    cnt0.write(count as u8);
+    cnt0.write((count >> 8) as u8);
 }
 
 pub fn timer_handler() {

@@ -11,7 +11,7 @@ KERNEL_BINARY := kernel/$(DIR_BIN)/kernel.sys
 RAW_IMAGE := img/raw_floppy.img
 TARGET_IMAGE := $(DIR_BIN)/floppy.img
 
-QEMU_FLAGS := -L . -m 64 -fda $(TARGET_IMAGE) -boot a -rtc base=localtime -M pc
+QEMU_FLAGS := -L . -m 64 -fda $(TARGET_IMAGE) -boot a -rtc base=localtime -M pc -serial stdio
 BOCHSRC := bochsrc.bxrc
 
 .PHONY: all build re rebuild run rerun dbg debug gdb bochs mostlyclean clean distclean

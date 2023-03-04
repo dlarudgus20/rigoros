@@ -18,7 +18,7 @@ lazy_static! {
         Mutex::new(Keyboard::new(layouts::Us104Key, ScancodeSet1, HandleControl::Ignore));
 }
 
-pub fn init_keyboard() {
+pub unsafe fn init_keyboard() {
 }
 
 pub fn keyboard_handler(data: u8) {
@@ -71,11 +71,12 @@ pub fn keyboard_handler(data: u8) {
 }
 
 pub extern "x86-interrupt" fn keyboard_int_handler(_stack_frame: InterruptStackFrame) {
+    let mut port = Port::new(KB_PORT_DATA);
+    let data = unsafe { port.read() };
+
+    intmsg_push(InterruptMessage::Keyboard(data));
+
     unsafe {
         send_eoi(Irq::KEYBOARD);
     }
-
-    let mut port = Port::new(KB_PORT_DATA);
-    let data = unsafe { port.read() };
-    intmsg_push(InterruptMessage::Keyboard(data));
 }

@@ -2,7 +2,7 @@ use bitflags::bitflags;
 use spin::Mutex;
 use pic8259::ChainedPics;
 
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum Irq {
     TIMER = 0,
@@ -44,12 +44,10 @@ static PIC: Mutex<ChainedPics> = Mutex::new(unsafe {
     ChainedPics::new(PIC_INT_OFFSET, PIC_INT_OFFSET + 8)
 });
 
-pub fn init_pic() {
+pub unsafe fn init_pic() {
     let mut pic = PIC.lock();
-    unsafe {
-        pic.initialize();
-        pic.disable();
-    }
+    pic.initialize();
+    pic.disable();
 }
 
 pub unsafe fn set_mask(mask: Mask) {

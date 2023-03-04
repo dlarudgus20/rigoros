@@ -4,7 +4,7 @@ use x86_64::instructions::interrupts::without_interrupts;
 
 use crate::ring_buffer::RingBuffer;
 
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InterruptMessage {
     Timer(),
     Keyboard(u8),
