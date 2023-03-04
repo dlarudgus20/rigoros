@@ -1,15 +1,16 @@
 use core::fmt;
 use lazy_static::lazy_static;
-use spin::Mutex;
 use uart_16550::SerialPort;
+
+use crate::irq_mutex::IrqMutex;
 
 const PORT_COM1: u16 = 0x3f8;
 
 lazy_static! {
-    pub static ref COM1: Mutex<SerialPort> = {
+    pub static ref COM1: IrqMutex<SerialPort> = {
         let mut serial_port = unsafe { SerialPort::new(PORT_COM1) };
         serial_port.init();
-        Mutex::new(serial_port)
+        IrqMutex::new(serial_port)
     };
 }
 

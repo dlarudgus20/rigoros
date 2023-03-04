@@ -85,9 +85,12 @@ impl<'a, T: Copy> RingBuffer<'a, T> {
         self.try_push(data).expect("Out of bound access")
     }
 
-    pub fn push_force(&mut self, data: T) {
+    pub fn push_force(&mut self, data: T) -> bool {
+        let mut forced = false;
+
         self.buffer[self.last] = data;
         if !self.empty && self.first == self.last {
+            forced = true;
             self.first += 1;
         }
         self.last += 1;
@@ -96,27 +99,31 @@ impl<'a, T: Copy> RingBuffer<'a, T> {
             self.last = 0;
         }
         self.empty = false;
+
+        forced
     }
 
-    pub fn insert_force(&mut self, pos: usize, data: T) {
+    pub fn insert_force(&mut self, pos: usize, data: T) -> bool {
         let len = self.len();
         if pos > len {
             panic!("Out of bound access")
         }
 
         if self.empty || pos == len {
-            self.push_force(data);
+            self.push_force(data)
         } else if self.first != self.last {
-            self.push(self.peek());
-            for i in (pos + 1..len).rev() {
-                self[i] = self[i - 1];
+            self.push(data);
+            for i in (pos..len).rev() {
+                self[i + 1] = self[i];
             }
             self[pos] = data;
+            false
         } else {
             for i in 0..pos {
                 self[i] = self[i + 1];
             }
             self[pos] = data;
+            true
         }
     }
 

@@ -3,6 +3,7 @@
 #![feature(const_mut_refs)]
 
 pub mod fixed_writer;
+pub mod irq_mutex;
 pub mod serial;
 pub mod terminal;
 pub mod idt;
@@ -46,11 +47,19 @@ pub extern "C" fn kmain() -> ! {
 
     log!("done");
 
+    let mut buffer = [0u8; terminal::INPUT_MAXSIZE];
+    print!("> ");
+    terminal::start_inputting();
+
     loop {
         match intmsg_pop() {
             Ok(InterruptMessage::Timer()) => pit::timer_handler(),
             Ok(InterruptMessage::Keyboard(data)) => keyboard::keyboard_handler(data),
             _ => x86_64::instructions::hlt(),
+        }
+
+        if let Ok(input) = terminal::getline(&mut buffer) {
+            println!("input: {}", input);
         }
     }
 }

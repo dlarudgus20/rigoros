@@ -3,12 +3,12 @@ use core::fmt::Write;
 use core::panic::PanicInfo;
 use volatile::Volatile;
 use lazy_static::lazy_static;
-use spin::Mutex;
 use arrayvec::{ArrayVec, ArrayString};
 use pc_keyboard::{KeyCode, DecodedKey};
 use x86_64::instructions::port::Port;
 use x86_64::instructions::interrupts::without_interrupts;
 
+use crate::irq_mutex::IrqMutex;
 use crate::fixed_writer::FixedWriter;
 use crate::halt_loop;
 use crate::ring_buffer::RingBuffer;
@@ -53,7 +53,7 @@ impl ColorCode {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum InputStatus { Input, Waiting }
+pub enum InputStatus { Inputting, Waiting }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StatusLineKind { Front, Back }
@@ -85,7 +85,8 @@ struct Terminal {
     status_front_len: usize,
     status_back_len: usize,
 
-    input_cur: usize,
+    input_begin: usize,
+    input_idx: usize,
     input_status: InputStatus,
     input: &'static mut ArrayVec<u8, INPUT_MAXSIZE>,
 
@@ -110,14 +111,14 @@ const VIDEO_MEMORY: usize = 0xffff80001feb8000;
 const VIDEO_HEIGHT: usize = 25;
 const VIDEO_WIDTH: usize = 80;
 
-const INPUT_MAXSIZE: usize = 1024;
+pub const INPUT_MAXSIZE: usize = 512;
 const BUFFER_HEIGHT: usize = 256;
 
 const EMPTY_CHAR: VideoChar = VideoChar { character: 0, color: ColorCode::DEFAULT };
 const EMPTY_ROW: VideoRow = [EMPTY_CHAR; VIDEO_WIDTH];
 
 lazy_static! {
-    static ref TERM: Mutex<Terminal> = Mutex::new(unsafe {
+    static ref TERM: IrqMutex<Terminal> = IrqMutex::new(unsafe {
         static mut BUFFER: [VideoRow; BUFFER_HEIGHT] = [EMPTY_ROW; BUFFER_HEIGHT];
         static mut INPUT: ArrayVec<u8, INPUT_MAXSIZE> = ArrayVec::new_const();
         Terminal {
@@ -126,7 +127,8 @@ lazy_static! {
             scr_row: 0,
             status_front_len: 0,
             status_back_len: 0,
-            input_cur: 0,
+            input_begin: 0,
+            input_idx: 0,
             input_status: InputStatus::Waiting,
             input: &mut INPUT,
             buffer: RingBuffer::new(&mut BUFFER),
@@ -141,6 +143,62 @@ pub unsafe fn init_term() {
     term.clear();
 
     enable_cursor(true);
+}
+
+pub fn start_inputting() {
+    let mut term = TERM.lock();
+    term.input_status = InputStatus::Inputting;
+}
+
+pub fn has_input() -> bool {
+    let term = TERM.lock();
+    term.input_idx > 0
+}
+
+pub fn has_input_line() -> bool {
+    let term = TERM.lock();
+    term.input_begin > 0
+}
+
+pub fn getline(line: &mut [u8]) -> Result<&str, usize> {
+    let mut term = TERM.lock();
+
+    if term.input_begin == 0 {
+        return Err(0);
+    }
+
+    let size = term.input.iter().position(|x| *x == b'\n').unwrap_or(term.input_begin);
+    if size < line.len() {
+        return Err(size);
+    }
+
+    let buf: ArrayVec<u8, INPUT_MAXSIZE> = term.input.drain(0..size).collect();
+    line.copy_from_slice(&buf);
+
+    term.input_begin -= size;
+    term.input_idx -= size;
+
+    Ok(str::from_utf8(&line[0..size]).unwrap())
+}
+
+pub fn process_input(input: DecodedKey) {
+    TERM.lock().process_input(input);
+}
+
+pub fn set_status_lines_front(lines: usize) {
+    TERM.lock().set_status_lines(StatusLineKind::Front, lines);
+}
+
+pub fn set_status_lines_back(lines: usize) {
+    TERM.lock().set_status_lines(StatusLineKind::Back, lines);
+}
+
+pub fn scroll(page: isize) {
+    TERM.lock().scroll_page(page);
+}
+
+pub fn line_info() -> LineInfo {
+    TERM.lock().line_info()
 }
 
 fn enable_cursor(enable: bool) {
@@ -178,30 +236,6 @@ fn set_cursor(pos: u16) {
     }
 }
 
-pub fn process_input(input: DecodedKey) {
-    without_interrupts(|| { TERM.lock().process_input(input) })
-}
-
-pub fn set_status_lines_front(lines: usize) {
-    without_interrupts(|| {
-        TERM.lock().set_status_lines(StatusLineKind::Front, lines);
-    });
-}
-
-pub fn set_status_lines_back(lines: usize) {
-    without_interrupts(|| {
-        TERM.lock().set_status_lines(StatusLineKind::Back, lines);
-    });
-}
-
-pub fn scroll(page: isize) {
-    without_interrupts(|| { TERM.lock().scroll_page(page); });
-}
-
-pub fn line_info() -> LineInfo {
-    without_interrupts(|| { TERM.lock().line_info() })
-}
-
 impl Terminal {
     pub fn clear(&mut self) {
         self.buffer.push_force(EMPTY_ROW);
@@ -222,6 +256,23 @@ impl Terminal {
         self.update_cursor();
     }
 
+    pub fn write_string_at(&mut self, color: ColorCode, row: usize, col: usize, s: &str) -> (usize, usize) {
+        let r = row.checked_add(col / VIDEO_WIDTH).unwrap_or_else(|| panic!("invalid position"));
+        let c = col % VIDEO_WIDTH;
+
+        // check too much value
+        if r > 3 * BUFFER_HEIGHT {
+            panic!("invalid position")
+        }
+
+        let mut pos = (r, c);
+        for ch in s.bytes() {
+            pos = self.write_char_at(color, pos.0, pos.1, ch);
+        }
+
+        pos
+    }
+
     pub fn process_input(&mut self, input: DecodedKey) {
         match (input, self.input_status) {
             (DecodedKey::RawKey(KeyCode::PageUp), _) => {
@@ -232,20 +283,21 @@ impl Terminal {
                 self.scroll_page(1);
                 self.print_line_status();
             }
-            (DecodedKey::Unicode('\n'), InputStatus::Input) => {
+            (DecodedKey::Unicode('\n'), InputStatus::Inputting) => {
+                self.complete_input();
                 self.clear_cur_line_status();
             }
-            (DecodedKey::RawKey(KeyCode::Delete), InputStatus::Input) => {
+            (DecodedKey::RawKey(KeyCode::Delete), InputStatus::Inputting) => {
                 self.delete_char();
                 self.print_cursor_status();
             }
-            (DecodedKey::Unicode('\x08'), InputStatus::Input) => {
+            (DecodedKey::Unicode('\x08'), InputStatus::Inputting) => {
                 self.backspace();
                 self.print_cursor_status();
             }
-            (DecodedKey::Unicode(ch), InputStatus::Input) => {
+            (DecodedKey::Unicode(ch), InputStatus::Inputting) => {
                 if ch.is_ascii() && !ch.is_ascii_control() {
-                    self.put_char(ch as u8);
+                    self.put_char(ch as u8, true);
                     self.print_cursor_status();
                 }
             }
@@ -253,25 +305,70 @@ impl Terminal {
         }
     }
 
-    fn put_char(&mut self, ch: u8) {
-        if let Ok(_) = self.input.try_insert(self.input_cur, ch) {
-            let mut buf = ArrayVec::<u8, INPUT_MAXSIZE>::new();
-            buf.try_extend_from_slice(&self.input[self.input_cur..]).unwrap();
+    fn complete_input(&mut self) {
+        self.put_char(b'\n', false);
+        self.input_status = InputStatus::Waiting;
+        self.input_begin = self.input_idx - 1;
+    }
 
-            let s = unsafe { str::from_utf8_unchecked(&buf) };
-            self.write_string(ColorCode::DEFAULT, s);
-            todo!("write_string_at ?");
+    fn put_char(&mut self, ch: u8, keep_last: bool) {
+        let end = self.input.capacity() - if keep_last { 2 } else { 1 };
+
+        if self.input_idx <= end {
+            self.input.insert(self.input_idx, ch);
+
+            self.write_char(ColorCode::DEFAULT, ch);
+            self.input_idx += 1;
+
+            if self.input_idx < self.input.len() {
+                self.redraw_input_from_cursor();
+            }
         }
     }
 
     fn delete_char(&mut self) {
-        todo!();
+        if self.input_idx < self.input.len() {
+            self.input.remove(self.input_idx);
+            self.redraw_input_from_cursor();
+        }
     }
 
     fn backspace(&mut self) {
-        todo!();
+        if self.input_idx > self.input_begin {
+            self.input_idx -= 1;
+            self.input.remove(self.input_idx);
+            self.redraw_input_from_cursor();
+        }
     }
 
+    fn redraw_input_from_cursor(&mut self) {
+        let buf: ArrayVec<u8, INPUT_MAXSIZE> = ArrayVec::try_from(&self.input[self.input_idx..]).unwrap();
+        let s = str::from_utf8(&buf).unwrap();
+        self.write_string_at(ColorCode::DEFAULT, self.cur_row, self.cur_col, s);
+    }
+/*
+    fn print_line_status() {
+        let terminal::LineInfo {
+            screen, height, total, ..
+        } = terminal::line_info();
+
+        let scr_page = (screen + height - 1) / height;
+        let scr_reminder = screen % height;
+        let total_page =
+            (total - scr_reminder + height - 1) / height
+            + if scr_reminder > 0 { 1 } else { 0 };
+
+        print_status!("page {} / {}, line {} / {}", scr_page + 1, total_page, screen + 1, total);
+    }
+
+    fn print_cursor_status() {
+        let terminal::LineInfo {
+            cur_col, cur_row, width, total, ..
+        } = terminal::line_info();
+
+        print_status!("row {} / {}, col {} / {}", cur_row + 1, total, cur_col + 1, width);
+    }
+*/
     fn print_line_status(&mut self) {
         if self.status_back_len > 0 {
             let screen = self.scr_row;
@@ -448,17 +545,21 @@ impl Terminal {
         }
     }
 
-    fn write_char_at(&mut self, color: ColorCode, col: usize, row: usize, ch: u8) -> (usize, usize) {
-        todo!();
+    fn write_char_at(&mut self, color: ColorCode, row: usize, col: usize, ch: u8) -> (usize, usize) {
         match ch {
             b'\n' => {
-                self.new_line_at(row)
+                self.new_line_at(row + 1);
+                (row + 1, 0)
             }
             ch => {
                 let ch = VideoChar {
                     character: ch,
                     color: color,
                 };
+
+                if row >= self.buffer.len() {
+                    self.new_line_at(row);
+                }
 
                 self.buffer[row][col] = ch;
                 if self.row_visible(row) {
@@ -468,9 +569,9 @@ impl Terminal {
 
                 let nc = col + 1;
                 if nc >= VIDEO_WIDTH {
-                    (0, row + 1)
+                    (row + 1, 0)
                 } else {
-                    (nc, row)
+                    (row, nc)
                 }
             }
         }
@@ -479,21 +580,42 @@ impl Terminal {
     fn new_line(&mut self) {
         self.cur_col = 0;
         self.cur_row += 1;
-        self.buffer.insert_force(self.cur_row, EMPTY_ROW);
-    }
 
-    fn new_line_at(&mut self, row: usize) -> (usize, usize) {
-        todo!();
-        if self.cur_row > row {
-            self.cur_row += 1;
+        let forced = self.buffer.insert_force(self.cur_row, EMPTY_ROW);
+
+        if forced && (1..self.cur_row + 1).contains(&self.scr_row) {
+            self.scr_row -= 1;
         }
-        if self.scr_row > row {
+        else if !forced && self.cur_row < self.scr_row {
             self.scr_row += 1;
         }
+    }
 
-        self.buffer.insert_force(row + 1, EMPTY_ROW);
+    fn new_line_at(&mut self, row: usize) {
+        if row <= self.buffer.len() {
+            let forced = self.buffer.insert_force(row, EMPTY_ROW);
 
-        (0, row + 1)
+            if forced {
+                if (1..row + 1).contains(&self.cur_row) {
+                    self.cur_row -= 1;
+                }
+                if (1..row + 1).contains(&self.scr_row) {
+                    self.scr_row -= 1;
+                }
+            }
+            else {
+                if self.cur_row > row {
+                    self.cur_row += 1;
+                }
+                if self.scr_row > row {
+                    self.scr_row += 1;
+                }
+            }
+        } else {
+            for _ in self.buffer.len()..row {
+                self.new_line_at(self.buffer.len());
+            }
+        }
     }
 
     fn cursor_visible(&self) -> bool {
@@ -588,20 +710,16 @@ macro_rules! print_status {
 
 #[doc(hidden)]
 pub fn _print(color: Option<ColorCode>, args: fmt::Arguments) {
-    without_interrupts(|| {
-        let mut term = TERM.lock();
-        let c = color.unwrap_or(ColorCode::DEFAULT);
-        TerminalWriter { term: &mut term, color: c }.write_fmt(args).unwrap();
-    });
+    let mut term = TERM.lock();
+    let c = color.unwrap_or(ColorCode::DEFAULT);
+    TerminalWriter { term: &mut term, color: c }.write_fmt(args).unwrap();
 }
 
 #[doc(hidden)]
 pub fn _print_status(kind: StatusLineKind, line: usize, args: fmt::Arguments) {
-    without_interrupts(|| {
-        let mut term = TERM.lock();
-        let mut writer = StatusLineWriter { term: &mut term, kind, line, cur: 0 };
-        writer.write_fmt(args).unwrap();
-    });
+    let mut term = TERM.lock();
+    let mut writer = StatusLineWriter { term: &mut term, kind, line, cur: 0 };
+    writer.write_fmt(args).unwrap();
 }
 
 #[panic_handler]
