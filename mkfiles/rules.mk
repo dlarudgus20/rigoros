@@ -40,7 +40,7 @@ $(TARGET_ELF): $(LD_SCRIPT) $(C_OBJECTS) $(AS_OBJECTS) $(LIBRARIES) | $(DIRS)
 	$(TOOLSET_NM) $(NM_FLAGS) $@ > $(DIR_OBJ)/$(TARGET_NAME).nm
 	$(TOOLSET_OBJDUMP) $(OBJDUMP_FLAGS) -D $@ > $(DIR_OBJ)/$(TARGET_NAME).disasm
 
-	$(TOOLSET_NM) --numeric-sort $@ \
+	$(TOOLSET_NM) -C --numeric-sort $@ \
 		| perl -p -e 's/([0-9a-fA-F]*) ([0-9a-fA-F]* .|.) ([^\s]*)(^$$|.*)/\1 \3/g' \
 		> $(DIR_OBJ)/$(TARGET_NAME).sym
 

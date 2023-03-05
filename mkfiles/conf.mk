@@ -34,7 +34,7 @@ CFLAGS += -ffreestanding -mcmodel=large -mno-red-zone -mno-mmx -mno-sse -mno-sse
 ASFLAGS +=
 LDFLAGS += -ffreestanding -nostdlib -Xlinker --gc-sections
 OBJDUMP_FLAGS += -C
-NM_FLAGS += --line-numbers --print-size --print-armap --numeric-sort
+NM_FLAGS += -C --line-numbers --print-size --print-armap --numeric-sort
 
 DIR_SRC := src
 DIR_BIN := bin/$(CONFIG)

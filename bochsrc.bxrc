@@ -1,6 +1,6 @@
 # http://bochs.sourceforge.net/doc/docbook/user/bochsrc.html
 
-romimage: file="$BXSHARE/BIOS-bochs-latest"
+romimage: file="$BXSHARE/BIOS-bochs-legacy"
 vgaromimage: file="$BXSHARE/VGABIOS-lgpl-latest"
 
 memory: guest=32, host=32

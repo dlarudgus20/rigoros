@@ -13,6 +13,7 @@ pub mod interrupt_queue;
 pub mod pit;
 pub mod keyboard;
 pub mod ring_buffer;
+pub mod page;
 
 use crate::interrupt_queue::{InterruptMessage, intmsg_pop};
 
@@ -64,7 +65,10 @@ pub extern "C" fn kmain() -> ! {
         }
 
         if let Ok(input) = terminal::getline(&mut buffer) {
-            println!("input: {}", input);
+            match input {
+                "print_page" => page::print_page(),
+                _ => println!("input: {}", input),
+            }
             prompt();
         }
     }

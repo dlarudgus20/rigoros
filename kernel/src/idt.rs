@@ -1,5 +1,6 @@
 use core::fmt;
 use lazy_static::lazy_static;
+use x86_64::registers::control::Cr2;
 use x86_64::structures::idt::{InterruptDescriptorTable, InterruptStackFrame, PageFaultErrorCode};
 
 use crate::gdt;
@@ -107,7 +108,7 @@ extern "x86-interrupt" fn general_protection_fault_int_handler(stack_frame: Inte
 }
 
 extern "x86-interrupt" fn page_fault_int_handler(stack_frame: InterruptStackFrame, error_code: PageFaultErrorCode) {
-    panic!("#PF:{} {}", PFCode(error_code), StackFrame(stack_frame));
+    panic!("#PF:{} access={:#018x} {}", PFCode(error_code), Cr2::read_raw(), StackFrame(stack_frame));
 }
 
 extern "x86-interrupt" fn x87_floating_point_int_handler(stack_frame: InterruptStackFrame) {

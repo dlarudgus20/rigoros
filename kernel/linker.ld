@@ -49,5 +49,10 @@ SECTIONS
 
     __bss_size = __bss_end - __bss_start;
 
+    . = 0xffff8000003f0000;
+    __page_table = .;
+
+    __stack_top = 0xffff80000f200000;
+
     . = 0;
 }
