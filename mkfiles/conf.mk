@@ -20,9 +20,13 @@ TOOLSET_BOCHS ?= bochs
 ifeq ($(CONFIG), debug)
 CFLAGS += -DDEBUG -ggdb
 ASFLAGS += -DDEBUG -g3
+CARGO_TARGET_DIR := debug
+CARGO_FLAG += --profile dev
 else ifeq ($(CONFIG), release)
 CFLAGS += -DNDEBUG -O3 -flto
 ASFLAGS += -DNDEBUG
+CARGO_TARGET_DIR := release
+CARGO_FLAG += --profile release
 endif
 
 CFLAGS += -ffreestanding -mcmodel=large -mno-red-zone -mno-mmx -mno-sse -mno-sse2 -fpack-struct \
