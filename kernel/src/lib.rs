@@ -67,6 +67,7 @@ pub extern "C" fn kmain() -> ! {
         if let Ok(input) = terminal::getline(&mut buffer) {
             match input {
                 "print_page" => page::print_page(),
+                "tick" => println!("tick: {}", pit::tick()),
                 _ => println!("input: {}", input),
             }
             prompt();

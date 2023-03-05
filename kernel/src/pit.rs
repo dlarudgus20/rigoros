@@ -1,3 +1,4 @@
+use core::sync::atomic::{AtomicU64, Ordering};
 use x86_64::instructions::port::Port;
 use x86_64::structures::idt::InterruptStackFrame;
 
@@ -15,6 +16,8 @@ const PIT_CTRL_LSBMSBRW: u8 = 0x00;
 const PIT_CTRL_MODE0: u8 = 0x00;
 const PIT_CTRL_BINARY: u8 = 0x00;
 
+static TICK_COUNTER: AtomicU64 = AtomicU64::new(0);
+
 pub unsafe fn init_pit() {
     let mut ctrl = Port::new(PIT_PORT_CTRL);
     let mut cnt0 = Port::new(PIT_PORT_CNT0);
@@ -26,13 +29,18 @@ pub unsafe fn init_pit() {
     cnt0.write((count >> 8) as u8);
 }
 
+pub fn tick() -> u64 {
+    return TICK_COUNTER.load(Ordering::SeqCst);
+}
+
 pub fn timer_handler() {
+    TICK_COUNTER.fetch_add(1, Ordering::SeqCst);
 }
 
 pub extern "x86-interrupt" fn timer_int_handler(_stack_frame: InterruptStackFrame) {
+    intmsg_push(InterruptMessage::Timer());
+
     unsafe {
         send_eoi(Irq::TIMER);
     }
-
-    intmsg_push(InterruptMessage::Timer());
 }
