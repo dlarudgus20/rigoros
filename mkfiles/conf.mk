@@ -33,7 +33,7 @@ CFLAGS += -ffreestanding -mcmodel=large -mno-red-zone -mno-mmx -mno-sse -mno-sse
 	-std=c99 -Wall -Wextra -Werror -Wno-unused-parameter -Wno-error=unused-variable -Wno-error=unused-function
 ASFLAGS +=
 LDFLAGS += -ffreestanding -nostdlib -Xlinker --gc-sections
-OBJDUMP_FLAGS +=
+OBJDUMP_FLAGS += -C
 NM_FLAGS += --line-numbers --print-size --print-armap --numeric-sort
 
 DIR_SRC := src

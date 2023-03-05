@@ -29,7 +29,6 @@ cleanimpl:
 
 $(RUST_OUTPUT_LIB) $(RUST_OUTPUT_DEP): $(CARGO_DEPS)
 	cargo build $(CARGO_FLAG)
-	$(TOOLSET_OBJDUMP) $(OBJDUMP_FLAGS) -D $(RUST_OUTPUT_LIB) > $(DIR_OBJ)/libkernel.disasm
 
 $(TARGET_BINARY): $(TARGET_ELF)
 	$(TOOLSET_OBJCOPY) -O binary -j .startup -j .text -j .rodata -j .data -j .bss -S -g $< $@
