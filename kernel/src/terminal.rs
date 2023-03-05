@@ -168,12 +168,19 @@ pub fn getline(line: &mut [u8]) -> Result<&str, usize> {
     }
 
     let size = term.input.iter().position(|x| *x == b'\n').unwrap_or(term.input_begin);
-    if size < line.len() {
+    if size > line.len() {
         return Err(size);
     }
 
-    let buf: ArrayVec<u8, INPUT_MAXSIZE> = term.input.drain(0..size).collect();
-    line.copy_from_slice(&buf);
+    let buf: ArrayVec<u8, INPUT_MAXSIZE> = term.input.drain(..size).collect();
+    line[..size].copy_from_slice(&buf);
+
+    if size < term.input_begin {
+        // remove last '\n'
+        term.input.remove(0);
+        term.input_begin -= 1;
+        term.input_idx -= 1;
+    }
 
     term.input_begin -= size;
     term.input_idx -= size;
@@ -286,19 +293,39 @@ impl Terminal {
             (DecodedKey::Unicode('\n'), InputStatus::Inputting) => {
                 self.complete_input();
                 self.clear_cur_line_status();
+                self.scroll_to_cursor();
+                self.update_cursor();
             }
-            (DecodedKey::RawKey(KeyCode::Delete), InputStatus::Inputting) => {
+            (DecodedKey::Unicode('\x7f'), InputStatus::Inputting) => {
                 self.delete_char();
                 self.print_cursor_status();
+                self.scroll_to_cursor();
+                self.update_cursor();
             }
             (DecodedKey::Unicode('\x08'), InputStatus::Inputting) => {
                 self.backspace();
                 self.print_cursor_status();
+                self.scroll_to_cursor();
+                self.update_cursor();
+            }
+            (DecodedKey::RawKey(KeyCode::ArrowLeft), InputStatus::Inputting) => {
+                self.input_move_backward();
+                self.print_cursor_status();
+                self.scroll_to_cursor();
+                self.update_cursor();
+            }
+            (DecodedKey::RawKey(KeyCode::ArrowRight), InputStatus::Inputting) => {
+                self.input_move_forward();
+                self.print_cursor_status();
+                self.scroll_to_cursor();
+                self.update_cursor();
             }
             (DecodedKey::Unicode(ch), InputStatus::Inputting) => {
                 if ch.is_ascii() && !ch.is_ascii_control() {
                     self.put_char(ch as u8, true);
                     self.print_cursor_status();
+                    self.scroll_to_cursor();
+                    self.update_cursor();
                 }
             }
             _ => {}
@@ -306,9 +333,14 @@ impl Terminal {
     }
 
     fn complete_input(&mut self) {
+        while self.input_idx < self.input.len() {
+            self.input_move_forward();
+        }
+
         self.put_char(b'\n', false);
         self.input_status = InputStatus::Waiting;
-        self.input_begin = self.input_idx - 1;
+        self.input_begin = self.input.len();
+        self.input_idx = self.input_begin;
     }
 
     fn put_char(&mut self, ch: u8, keep_last: bool) {
@@ -329,15 +361,45 @@ impl Terminal {
     fn delete_char(&mut self) {
         if self.input_idx < self.input.len() {
             self.input.remove(self.input_idx);
+
+            self.input.push(b' ');
             self.redraw_input_from_cursor();
+            self.input.remove(self.input.len() - 1);
         }
     }
 
     fn backspace(&mut self) {
         if self.input_idx > self.input_begin {
+            self.input_move_backward();
+            self.delete_char();
+        }
+    }
+
+    fn input_move_forward(&mut self) {
+        if self.input_idx < self.input.len() {
+            self.input_idx += 1;
+
+            self.cur_col += 1;
+            if self.cur_col >= VIDEO_WIDTH {
+                self.cur_col = 0;
+                self.cur_row += 1;
+            }
+        }
+    }
+
+    fn input_move_backward(&mut self) {
+        if self.input_idx > self.input_begin {
             self.input_idx -= 1;
-            self.input.remove(self.input_idx);
-            self.redraw_input_from_cursor();
+
+            if self.cur_col == 0 {
+                if self.cur_row > 0 {
+                    self.cur_col = VIDEO_WIDTH - 1;
+                    self.cur_row -= 1;
+                }
+            }
+            else {
+                self.cur_col -= 1;
+            }
         }
     }
 
@@ -346,29 +408,7 @@ impl Terminal {
         let s = str::from_utf8(&buf).unwrap();
         self.write_string_at(ColorCode::DEFAULT, self.cur_row, self.cur_col, s);
     }
-/*
-    fn print_line_status() {
-        let terminal::LineInfo {
-            screen, height, total, ..
-        } = terminal::line_info();
 
-        let scr_page = (screen + height - 1) / height;
-        let scr_reminder = screen % height;
-        let total_page =
-            (total - scr_reminder + height - 1) / height
-            + if scr_reminder > 0 { 1 } else { 0 };
-
-        print_status!("page {} / {}, line {} / {}", scr_page + 1, total_page, screen + 1, total);
-    }
-
-    fn print_cursor_status() {
-        let terminal::LineInfo {
-            cur_col, cur_row, width, total, ..
-        } = terminal::line_info();
-
-        print_status!("row {} / {}, col {} / {}", cur_row + 1, total, cur_col + 1, width);
-    }
-*/
     fn print_line_status(&mut self) {
         if self.status_back_len > 0 {
             let screen = self.scr_row;
@@ -578,7 +618,7 @@ impl Terminal {
     }
 
     fn new_line(&mut self) {
-        self.cur_col = 0;
+        /*self.cur_col = 0;
         self.cur_row += 1;
 
         let forced = self.buffer.insert_force(self.cur_row, EMPTY_ROW);
@@ -588,7 +628,11 @@ impl Terminal {
         }
         else if !forced && self.cur_row < self.scr_row {
             self.scr_row += 1;
-        }
+        }*/
+
+        self.new_line_at(self.cur_row + 1);
+        self.cur_row += 1;
+        self.cur_col = 0;
     }
 
     fn new_line_at(&mut self, row: usize) {

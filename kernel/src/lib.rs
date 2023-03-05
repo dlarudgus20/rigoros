@@ -48,8 +48,13 @@ pub extern "C" fn kmain() -> ! {
     log!("done");
 
     let mut buffer = [0u8; terminal::INPUT_MAXSIZE];
-    print!("> ");
-    terminal::start_inputting();
+
+    fn prompt() {
+        print!("> ");
+        terminal::start_inputting();
+    }
+
+    prompt();
 
     loop {
         match intmsg_pop() {
@@ -60,6 +65,7 @@ pub extern "C" fn kmain() -> ! {
 
         if let Ok(input) = terminal::getline(&mut buffer) {
             println!("input: {}", input);
+            prompt();
         }
     }
 }
