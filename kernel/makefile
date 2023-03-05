@@ -12,6 +12,8 @@ DEPENDENCIES += $(RUST_OUTPUT_DEP)
 CARGO_FLAG += -Z build-std=core,compiler_builtins -Z build-std-features=compiler-builtins-mem
 CARGO_DEPS := Cargo.toml x86_64-unknown-none.json .cargo/config.toml rust-toolchain
 
+CODE_SECTIONS := .startup .text
+
 LIBRARIES := $(RUST_OUTPUT_LIB)
 
 include ../mkfiles/rules.mk
