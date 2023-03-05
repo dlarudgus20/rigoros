@@ -3,6 +3,8 @@
 romimage: file="$BXSHARE/BIOS-bochs-legacy"
 vgaromimage: file="$BXSHARE/VGABIOS-lgpl-latest"
 
+cpu: count=1, reset_on_triple_fault=0
+
 memory: guest=32, host=32
 
 floppya: 1_44=bin/$CONFIG/floppy.img, status=inserted

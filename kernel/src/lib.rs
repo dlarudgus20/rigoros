@@ -14,6 +14,8 @@ pub mod pit;
 pub mod keyboard;
 pub mod ring_buffer;
 pub mod page;
+pub mod context;
+pub mod task;
 
 use crate::interrupt_queue::{InterruptMessage, intmsg_pop};
 
@@ -31,6 +33,9 @@ pub extern "C" fn kmain() -> ! {
 
         idt::init_idt();
         log!("idt initialized");
+
+        page::init_page();
+        log!("page initialized");
 
         pic::init_pic();
         log!("pic initialized");
@@ -66,8 +71,9 @@ pub extern "C" fn kmain() -> ! {
 
         if let Ok(input) = terminal::getline(&mut buffer) {
             match input {
-                "print_page" => page::print_page(),
+                "print-page" => page::print_page(),
                 "tick" => println!("tick: {}", pit::tick()),
+                "test-task" => task::test_task(),
                 _ => println!("input: {}", input),
             }
             prompt();

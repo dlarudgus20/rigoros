@@ -7,6 +7,10 @@ use x86_64::VirtAddr;
 
 pub const DOUBLE_FAULT_IST_INDEX: u16 = 0;
 
+pub const KERNEL_CODE_SELECTOR: u16 = 0x08;
+pub const KERNEL_DATA_SELECTOR: u16 = 0x10;
+pub const KERNEL_TSS_SELECTOR: u16 = 0x18;
+
 const STACK_SIZE: usize = 8192;
 
 struct Selectors {

@@ -89,6 +89,7 @@ struct Terminal {
     input_idx: usize,
     input_status: InputStatus,
     input: &'static mut ArrayVec<u8, INPUT_MAXSIZE>,
+    history: &'static mut ArrayVec<u8, INPUT_MAXSIZE>,
 
     buffer: RingBuffer<'static, VideoRow>,
     video: Volatile<&'static mut VideoBuffer>,
@@ -128,6 +129,7 @@ lazy_static! {
     static ref TERM: IrqMutex<Terminal> = IrqMutex::new(unsafe {
         static mut BUFFER: [VideoRow; BUFFER_HEIGHT] = [EMPTY_ROW; BUFFER_HEIGHT];
         static mut INPUT: ArrayVec<u8, INPUT_MAXSIZE> = ArrayVec::new_const();
+        static mut HISTORY: ArrayVec<u8, INPUT_MAXSIZE> = ArrayVec::new_const();
         Terminal {
             cur_col: 0,
             cur_row: 0,
@@ -138,6 +140,7 @@ lazy_static! {
             input_idx: 0,
             input_status: InputStatus::Waiting,
             input: &mut INPUT,
+            history: &mut HISTORY,
             buffer: RingBuffer::new(&mut BUFFER),
             video: Volatile::new(&mut *(VIDEO_MEMORY as *mut VideoBuffer)),
         }
@@ -181,6 +184,7 @@ pub fn getline(line: &mut [u8]) -> Result<&str, usize> {
 
     let buf: ArrayVec<u8, INPUT_MAXSIZE> = term.input.drain(..size).collect();
     line[..size].copy_from_slice(&buf);
+    term.history.clone_from(&buf);
 
     if size < term.input_begin {
         // remove last '\n'
@@ -327,6 +331,12 @@ impl Terminal {
                 self.scroll_to_cursor();
                 self.update_cursor();
             }
+            (DecodedKey::RawKey(KeyCode::ArrowUp), InputStatus::Inputting) => {
+                self.recover_history();
+                self.print_cursor_status();
+                self.scroll_to_cursor();
+                self.update_cursor();
+            }
             (DecodedKey::Unicode(ch), InputStatus::Inputting) => {
                 if ch.is_ascii() && !ch.is_ascii_control() {
                     self.put_char(ch as u8, true);
@@ -406,6 +416,22 @@ impl Terminal {
             }
             else {
                 self.cur_col -= 1;
+            }
+        }
+    }
+
+    fn recover_history(&mut self) {
+        if self.history.len() < self.input.capacity() - self.input_begin {
+            while self.input_idx > self.input_begin {
+                self.input_move_backward();
+            }
+            while self.input_idx < self.input.len() {
+                self.delete_char();
+            }
+
+            let history = self.history.clone();
+            for ch in history {
+                self.put_char(ch, true);
             }
         }
     }
