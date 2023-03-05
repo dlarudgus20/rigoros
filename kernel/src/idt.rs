@@ -2,10 +2,7 @@ use core::fmt;
 use lazy_static::lazy_static;
 use x86_64::structures::idt::{InterruptDescriptorTable, InterruptStackFrame, PageFaultErrorCode};
 
-use crate::halt_loop;
-use crate::println;
 use crate::gdt;
-
 use crate::pic::Irq;
 use crate::pit::timer_int_handler;
 use crate::keyboard::keyboard_int_handler;
@@ -58,112 +55,91 @@ pub unsafe fn init_idt() {
 }
 
 extern "x86-interrupt" fn divide_error_int_handler(stack_frame: InterruptStackFrame) {
-    println!("#DE {}", StackFrame(stack_frame));
-    halt_loop();
+    panic!("#DE {}", StackFrame(stack_frame));
 }
 
 extern "x86-interrupt" fn debug_int_handler(stack_frame: InterruptStackFrame) {
-    println!("#DB {}", StackFrame(stack_frame));
-    halt_loop();
+    panic!("#DB {}", StackFrame(stack_frame));
 }
 
 extern "x86-interrupt" fn nmi_int_handler(stack_frame: InterruptStackFrame) {
-    println!("#NMI {}", StackFrame(stack_frame));
-    halt_loop();
+    panic!("#NMI {}", StackFrame(stack_frame));
 }
 
 extern "x86-interrupt" fn breakpoint_int_handler(stack_frame: InterruptStackFrame) {
-    println!("#BP {}", StackFrame(stack_frame));
+    panic!("#BP {}", StackFrame(stack_frame));
 }
 
 extern "x86-interrupt" fn overflow_int_handler(stack_frame: InterruptStackFrame) {
-    println!("#OF {}", StackFrame(stack_frame));
-    halt_loop();
+    panic!("#OF {}", StackFrame(stack_frame));
 }
 
 extern "x86-interrupt" fn bound_range_exceeded_int_handler(stack_frame: InterruptStackFrame) {
-    println!("#BR {}", StackFrame(stack_frame));
-    halt_loop();
+    panic!("#BR {}", StackFrame(stack_frame));
 }
 
 extern "x86-interrupt" fn invalid_opcode_int_handler(stack_frame: InterruptStackFrame) {
-    println!("#UD {}", StackFrame(stack_frame));
-    halt_loop();
+    panic!("#UD {}", StackFrame(stack_frame));
 }
 
 extern "x86-interrupt" fn device_not_available_int_handler(stack_frame: InterruptStackFrame) {
-    println!("#NM {}", StackFrame(stack_frame));
-    halt_loop();
+    panic!("#NM {}", StackFrame(stack_frame));
 }
 
 extern "x86-interrupt" fn double_fault_int_handler(stack_frame: InterruptStackFrame, error_code: u64) -> ! {
-    println!("#DF:{:#018x} {}", error_code, StackFrame(stack_frame));
-    halt_loop();
+    panic!("#DF:{:#018x} {}", error_code, StackFrame(stack_frame));
 }
 
 extern "x86-interrupt" fn invalid_tss_int_handler(stack_frame: InterruptStackFrame, error_code: u64) {
-    println!("#TS:{:#018x} {}", error_code, StackFrame(stack_frame));
-    halt_loop();
+    panic!("#TS:{:#018x} {}", error_code, StackFrame(stack_frame));
 }
 
 extern "x86-interrupt" fn segment_not_present_int_handler(stack_frame: InterruptStackFrame, error_code: u64) {
-    println!("#NP:{:#018x} {}", error_code, StackFrame(stack_frame));
-    halt_loop();
+    panic!("#NP:{:#018x} {}", error_code, StackFrame(stack_frame));
 }
 
 extern "x86-interrupt" fn stack_segment_fault_int_handler(stack_frame: InterruptStackFrame, error_code: u64) {
-    println!("#SS:{:#018x} {}", error_code, StackFrame(stack_frame));
-    halt_loop();
+    panic!("#SS:{:#018x} {}", error_code, StackFrame(stack_frame));
 }
 
 extern "x86-interrupt" fn general_protection_fault_int_handler(stack_frame: InterruptStackFrame, error_code: u64) {
-    println!("#GP:{:#018x} {}", error_code, StackFrame(stack_frame));
-    halt_loop();
+    panic!("#GP:{:#018x} {}", error_code, StackFrame(stack_frame));
 }
 
 extern "x86-interrupt" fn page_fault_int_handler(stack_frame: InterruptStackFrame, error_code: PageFaultErrorCode) {
-    println!("#PF:{} {}", PFCode(error_code), StackFrame(stack_frame));
-    halt_loop();
+    panic!("#PF:{} {}", PFCode(error_code), StackFrame(stack_frame));
 }
 
 extern "x86-interrupt" fn x87_floating_point_int_handler(stack_frame: InterruptStackFrame) {
-    println!("#MF {}", StackFrame(stack_frame));
-    halt_loop();
+    panic!("#MF {}", StackFrame(stack_frame));
 }
 
 extern "x86-interrupt" fn alignment_check_int_handler(stack_frame: InterruptStackFrame, error_code: u64) {
-    println!("#AC:{:#018x} {}", error_code, StackFrame(stack_frame));
-    halt_loop();
+    panic!("#AC:{:#018x} {}", error_code, StackFrame(stack_frame));
 }
 
 extern "x86-interrupt" fn machine_check_int_handler(stack_frame: InterruptStackFrame) -> ! {
-    println!("#MC {}", StackFrame(stack_frame));
-    halt_loop();
+    panic!("#MC {}", StackFrame(stack_frame));
 }
 
 extern "x86-interrupt" fn simd_floating_point_int_handler(stack_frame: InterruptStackFrame) {
-    println!("#XF {}", StackFrame(stack_frame));
-    halt_loop();
+    panic!("#XF {}", StackFrame(stack_frame));
 }
 
 extern "x86-interrupt" fn virtualization_int_handler(stack_frame: InterruptStackFrame) {
-    println!("#VE {}", StackFrame(stack_frame));
-    halt_loop();
+    panic!("#VE {}", StackFrame(stack_frame));
 }
 
 extern "x86-interrupt" fn vmm_communication_exception_int_handler(stack_frame: InterruptStackFrame, error_code: u64) {
-    println!("#VC:{:#018x} {}", error_code, StackFrame(stack_frame));
-    halt_loop();
+    panic!("#VC:{:#018x} {}", error_code, StackFrame(stack_frame));
 }
 
 extern "x86-interrupt" fn security_exception_int_handler(stack_frame: InterruptStackFrame, error_code: u64) {
-    println!("#SX:{:#018x} {}", error_code, StackFrame(stack_frame));
-    halt_loop();
+    panic!("#SX:{:#018x} {}", error_code, StackFrame(stack_frame));
 }
 
 extern "x86-interrupt" fn unknown_int_handler(stack_frame: InterruptStackFrame) {
-    println!("#UNKNOWN {}", StackFrame(stack_frame));
-    halt_loop();
+    panic!("#UNKNOWN {}", StackFrame(stack_frame));
 }
 
 struct StackFrame(InterruptStackFrame);
