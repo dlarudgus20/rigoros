@@ -99,6 +99,13 @@ struct TerminalWriter<'a> {
     color: ColorCode,
 }
 
+struct TerminalAtWriter<'a> {
+    term: &'a mut Terminal,
+    color: ColorCode,
+    row: usize,
+    col: usize,
+}
+
 struct StatusLineWriter<'a> {
     term: &'a mut Terminal,
     kind: StatusLineKind,
@@ -698,28 +705,37 @@ impl Terminal {
     }
 }
 
-impl<'a> Write for TerminalWriter<'a> {
+impl Write for TerminalWriter<'_> {
     fn write_str(&mut self, s: &str) -> fmt::Result {
         self.term.write_string(self.color, s);
         Ok(())
     }
 }
 
-impl<'a> StatusLineWriter<'a> {
+impl Write for TerminalAtWriter<'_> {
+    fn write_str(&mut self, s: &str) -> fmt::Result {
+        let (row, col) = self.term.write_string_at(self.color, self.row, self.col, s);
+        self.row = row;
+        self.col = col;
+        Ok(())
+    }
+}
+
+impl StatusLineWriter<'_> {
     pub fn done(&mut self) {
         self.term.clear_status_line(self.kind, self.line, self.cur);
         self.cur = VIDEO_WIDTH;
     }
 }
 
-impl<'a> Write for StatusLineWriter<'a> {
+impl Write for StatusLineWriter<'_> {
     fn write_str(&mut self, s: &str) -> fmt::Result {
         self.cur = self.term.write_status_line(self.kind, self.line, s, self.cur);
         Ok(())
     }
 }
 
-impl<'a> Drop for StatusLineWriter<'a> {
+impl Drop for StatusLineWriter<'_> {
     fn drop(&mut self) {
         self.done();
     }
@@ -727,20 +743,22 @@ impl<'a> Drop for StatusLineWriter<'a> {
 
 #[macro_export]
 macro_rules! print {
-    (color: $c:expr; $($arg:tt)*) => ($crate::terminal::_print(Some($c), format_args!($($arg)*)));
+    (color: $c:expr, row: $row:expr, col: $col:expr, $($arg:tt)*) => ($crate::terminal::_print_at(Some($c), $row, $col, format_args!($($arg)*)));
+    (row: $row:expr, col: $col:expr, $($arg:tt)*) => ($crate::terminal::_print_at(None, $row, $col, format_args!($($arg)*)));
+    (color: $c:expr, $($arg:tt)*) => ($crate::terminal::_print(Some($c), format_args!($($arg)*)));
     ($($arg:tt)*) => ($crate::terminal::_print(None, format_args!($($arg)*)));
 }
 
 #[macro_export]
 macro_rules! println {
     () => ($crate::print!("\n"));
-    (color: $c:expr; $($arg:tt)*) => ($crate::print!(color: $c; "{}\n", format_args!($($arg)*)));
+    (color: $c:expr, $($arg:tt)*) => ($crate::print!(color: $c, "{}\n", format_args!($($arg)*)));
     ($($arg:tt)*) => ($crate::print!("{}\n", format_args!($($arg)*)));
 }
 
 #[macro_export]
 macro_rules! log {
-    ($($arg:tt)*) => ($crate::println!(color: $crate::terminal::ColorCode::LOG; $($arg)*));
+    ($($arg:tt)*) => ($crate::println!(color: $crate::terminal::ColorCode::LOG, $($arg)*));
 }
 
 #[macro_export]
@@ -757,6 +775,13 @@ pub fn _print(color: Option<ColorCode>, args: fmt::Arguments) {
     let mut term = TERM.lock();
     let c = color.unwrap_or(ColorCode::DEFAULT);
     TerminalWriter { term: &mut term, color: c }.write_fmt(args).unwrap();
+}
+
+#[doc(hidden)]
+pub fn _print_at(color: Option<ColorCode>, row: usize, col: usize, args: fmt::Arguments) {
+    let mut term = TERM.lock();
+    let c = color.unwrap_or(ColorCode::DEFAULT);
+    TerminalAtWriter { term: &mut term, color: c, row, col }.write_fmt(args).unwrap();
 }
 
 #[doc(hidden)]
