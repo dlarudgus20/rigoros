@@ -91,13 +91,18 @@ impl<'a, T: Copy> RingBuffer<'a, T> {
         self.buffer[self.last] = data;
         if !self.empty && self.first == self.last {
             forced = true;
-            self.first += 1;
-        }
-        self.last += 1;
 
+            self.first += 1;
+            if self.first >= self.size {
+                self.first = 0;
+            }
+        }
+
+        self.last += 1;
         if self.last >= self.size {
             self.last = 0;
         }
+
         self.empty = false;
 
         forced
