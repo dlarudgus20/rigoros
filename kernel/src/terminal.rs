@@ -12,6 +12,7 @@ use crate::irq_mutex::IrqMutex;
 use crate::fixed_writer::FixedWriter;
 use crate::halt_loop;
 use crate::ring_buffer::RingBuffer;
+use crate::serial::COM1;
 
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -784,7 +785,8 @@ macro_rules! println {
 
 #[macro_export]
 macro_rules! log {
-    ($($arg:tt)*) => ($crate::println!(color: $crate::terminal::ColorCode::LOG, $($arg)*));
+    (color: $c:expr, $($arg:tt)*) => ($crate::terminal::_log(Some($c), format_args!($($arg)*)));
+    ($($arg:tt)*) => ($crate::terminal::_log(None, format_args!($($arg)*)));
 }
 
 #[macro_export]
@@ -801,6 +803,22 @@ pub fn _print(color: Option<ColorCode>, args: fmt::Arguments) {
     let mut term = TERM.lock();
     let c = color.unwrap_or(ColorCode::DEFAULT);
     TerminalWriter { term: &mut term, color: c }.write_fmt(args).unwrap();
+}
+
+#[doc(hidden)]
+pub fn _log(color: Option<ColorCode>, args: fmt::Arguments) {
+    let mut term = TERM.lock();
+    let mut serial = COM1.lock();
+
+    let mut writer = TerminalWriter {
+        term: &mut term,
+        color: color.unwrap_or(ColorCode::LOG),
+    };
+
+    serial.write_fmt(args).ok();
+    serial.write_char('\n').ok();
+    writer.write_fmt(args).unwrap();
+    writer.write_char('\n').unwrap();
 }
 
 #[doc(hidden)]

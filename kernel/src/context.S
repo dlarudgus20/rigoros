@@ -8,6 +8,8 @@ switch_context:
     mov %rsp, %rbp
 
     push %rax
+    pushfq
+    cli
 
     xor %rax, %rax
     mov %ss, %ax
@@ -17,7 +19,6 @@ switch_context:
     add $16, %rax           // push %rbp + return address
     mov %rax, 22 * 8(%rdi)  // rsp
 
-    pushfq
     pop %rax
     mov %rax, 21 * 8(%rdi)  // rflags
 
@@ -29,6 +30,7 @@ switch_context:
     mov %rax, 19 * 8(%rdi)  // rip
 
     pop %rax
+    pop %rbp
 
     // save other registers
     mov %rdi, %rsp

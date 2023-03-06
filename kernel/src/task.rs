@@ -1,5 +1,5 @@
 use x86_64::VirtAddr;
-use x86_64::registers::rflags::{self, RFlags};
+use x86_64::registers::rflags;
 
 use crate::println;
 use crate::context::{Context, switch_context};
@@ -30,8 +30,7 @@ pub fn test_task() {
             TASK.rip = task_main as u64;
             TASK.cs = KERNEL_CODE_SELECTOR.into();
 
-            // TODO: 인터럽트 허용하면 #DF 터짐 -> 스택때문인가...
-            TASK.rflags = rflags::read().difference(RFlags::INTERRUPT_FLAG).bits();
+            TASK.rflags = rflags::read_raw();
 
             TASK.rsp = 0x400000;
             TASK.rbp = TASK.rsp;

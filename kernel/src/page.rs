@@ -3,7 +3,8 @@ use x86_64::structures::paging::page_table::PageTableEntry;
 use x86_64::{VirtAddr, PhysAddr};
 use x86_64::structures::paging::{PageTable, PageTableFlags};
 
-use crate::println;
+use crate::log;
+use crate::terminal::ColorCode;
 
 const PAGE_TABLE_ADDR: u64 = 0xffff8000003f0000;
 
@@ -24,7 +25,8 @@ pub unsafe fn init_page() {
     PDPT[0].set_addr(phys_addr_in_kernel(VirtAddr::from_ptr(&PDT)), flags);
     PDT[1].set_addr(phys_addr_in_kernel(VirtAddr::from_ptr(&PT)), flags);
 
-    for (idx, entry) in PT.iter_mut().enumerate() {
+    for idx in 504..512 {
+        let entry = &mut PT[idx];
         let addr = start + (idx as u64) * 4096;
         entry.set_addr(PhysAddr::new(addr), flags);
     }
@@ -49,7 +51,7 @@ pub fn print_page() {
 fn print_table_r(table: &PageTable, names: &[&str], depth: usize, virt: u64) {
     for (idx, entry) in table.iter().enumerate() {
         if entry.flags().contains(PageTableFlags::PRESENT) {
-            println!("{} {:#5x} to {:#x}: {:?}", names[depth], idx, entry.addr().as_u64(), entry.flags());
+            log!(color: ColorCode::DEFAULT, "{} {:#5x} to {:#x}: {:?}", names[depth], idx, entry.addr().as_u64(), entry.flags());
 
             if !entry.flags().contains(PageTableFlags::HUGE_PAGE) {
                 let addr = virt_addr_in_kernel(entry.addr());
@@ -81,7 +83,7 @@ fn print_table_r(table: &PageTable, names: &[&str], depth: usize, virt: u64) {
                         let len = (idx - first) as u64;
                         let v = VirtAddr::new((virt << 9 | first as u64) << 12).as_u64();
                         let p = page.addr().as_u64();
-                        println!("   PT {:#018x}-{:#018x} to {:#x}-{:#x}", v, v + len * 4096, p, p + len * 4096);
+                        log!(color: ColorCode::DEFAULT, "   PT {:#018x}-{:#018x} to {:#x}-{:#x}", v, v + len * 4096, p, p + len * 4096);
 
                         found = if present { Some(idx) } else { None };
                     }
