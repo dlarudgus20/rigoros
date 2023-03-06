@@ -16,6 +16,7 @@ pub mod ring_buffer;
 pub mod page;
 pub mod context;
 pub mod task;
+pub mod shell;
 
 use crate::interrupt_queue::{InterruptMessage, intmsg_pop};
 
@@ -55,12 +56,7 @@ pub extern "C" fn kmain() -> ! {
 
     let mut buffer = [0u8; terminal::INPUT_MAXSIZE];
 
-    fn prompt() {
-        print!("> ");
-        terminal::start_inputting();
-    }
-
-    prompt();
+    shell::prompt();
 
     loop {
         match intmsg_pop() {
@@ -70,19 +66,8 @@ pub extern "C" fn kmain() -> ! {
         }
 
         if let Ok(input) = terminal::getline(&mut buffer) {
-            match input {
-                "print-page" => page::print_page(),
-                "tick" => println!("tick: {}", pit::tick()),
-                "test-task" => task::test_task(),
-                _ => println!("input: {}", input),
-            }
-            prompt();
+            shell::input_line(input);
+            shell::prompt();
         }
-    }
-}
-
-pub fn halt_loop() -> ! {
-    loop {
-        x86_64::instructions::hlt();
     }
 }

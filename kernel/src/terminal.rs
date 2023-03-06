@@ -10,7 +10,6 @@ use x86_64::instructions::interrupts::without_interrupts;
 
 use crate::irq_mutex::IrqMutex;
 use crate::fixed_writer::FixedWriter;
-use crate::halt_loop;
 use crate::ring_buffer::RingBuffer;
 use crate::serial::COM1;
 
@@ -51,6 +50,7 @@ impl ColorCode {
     pub const STATUS: ColorCode = ColorCode::new(Color::White, Color::LightGrey);
     pub const INPUT: ColorCode = ColorCode::new(Color::White, Color::Black);
     pub const PANIC: ColorCode = ColorCode::new(Color::Red, Color::White);
+    pub const ERROR: ColorCode = ColorCode::new(Color::LightRed, Color::Black);
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -860,6 +860,8 @@ fn panic(info: &PanicInfo) -> ! {
             }
         }
 
-        halt_loop();
+        loop {
+            x86_64::instructions::hlt();
+        }
     })
 }
