@@ -16,10 +16,10 @@ include ../mkfiles/rules.mk
 BOOT := $(DIR_BIN)/boot.bin
 
 build: $(BOOT) $(STAGE)
-	@echo "${FG_LGREEN}Stage size is $(STAGE_SIZE) byte(s).${NO_COLOR}"
-	@echo "${FG_LGREEN}Bootloader will load $(STAGE_SECTORS) sector(s).${NO_COLOR}"
 
 $(BOOT): $(TARGET_ELF)
+	@echo "${FG_LGREEN}Stage size is $(STAGE_SIZE) byte(s).${NO_COLOR}"
+	@echo "${FG_LGREEN}Bootloader will load $(STAGE_SECTORS) sector(s).${NO_COLOR}"
 	$(TOOLSET_OBJCOPY) -O binary -j .boot -S -g $< $@
 
 obj/$(CONFIG)/boot.S.o: $(STAGE_BINARY)

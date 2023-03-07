@@ -22,8 +22,6 @@ TARGET_BINARY := $(DIR_BIN)/kernel.sys
 
 # rules
 
-.PHONY: $(RUST_OUTPUT_LIB)
-
 build: $(TARGET_BINARY)
 
 cleanimpl:
