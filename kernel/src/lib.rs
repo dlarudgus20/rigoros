@@ -18,6 +18,8 @@ pub mod context;
 pub mod task;
 pub mod shell;
 
+use x86_64::instructions::interrupts;
+
 use crate::interrupt_queue::{InterruptMessage, intmsg_pop};
 
 #[no_mangle]
@@ -59,15 +61,21 @@ pub extern "C" fn kmain() -> ! {
     shell::prompt();
 
     loop {
-        match intmsg_pop() {
-            Ok(InterruptMessage::Timer()) => pit::timer_handler(),
-            Ok(InterruptMessage::Keyboard(data)) => keyboard::keyboard_handler(data),
-            _ => x86_64::instructions::hlt(),
-        }
+        interrupts::disable();
+        if let Some(msg) = intmsg_pop() {
+            interrupts::enable();
+            match msg {
+                InterruptMessage::Timer() => pit::timer_handler(),
+                InterruptMessage::Keyboard(data) => keyboard::keyboard_handler(data),
+            }
 
-        if let Ok(input) = terminal::getline(&mut buffer) {
-            shell::input_line(input);
-            shell::prompt();
+            if let Ok(input) = terminal::getline(&mut buffer) {
+                shell::input_line(input);
+                shell::prompt();
+            }
+        }
+        else {
+            interrupts::enable_and_hlt();
         }
     }
 }

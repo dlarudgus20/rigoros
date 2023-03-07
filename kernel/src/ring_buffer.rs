@@ -53,11 +53,11 @@ impl<'a, T: Copy> RingBuffer<'a, T> {
         }
     }
 
-    pub fn try_peek(&self) -> Result<T, ()> {
+    pub fn try_peek(&self) -> Option<T> {
         if !self.empty {
-            Ok(self.buffer[self.first])
+            Some(self.buffer[self.first])
         } else {
-            Err(())
+            None
         }
     }
 
@@ -65,7 +65,7 @@ impl<'a, T: Copy> RingBuffer<'a, T> {
         self.try_peek().expect("Out of bound access")
     }
 
-    pub fn try_push(&mut self, data: T) -> Result<(), ()> {
+    pub fn try_push(&mut self, data: T) -> Option<()> {
         if self.empty || self.first != self.last {
             self.buffer[self.last] = data;
             self.last += 1;
@@ -75,9 +75,9 @@ impl<'a, T: Copy> RingBuffer<'a, T> {
             }
 
             self.empty = false;
-            Ok(())
+            Some(())
         } else {
-            Err(())
+            None
         }
     }
 
@@ -132,7 +132,7 @@ impl<'a, T: Copy> RingBuffer<'a, T> {
         }
     }
 
-    pub fn try_pop(&mut self) -> Result<T, ()> {
+    pub fn try_pop(&mut self) -> Option<T> {
         if !self.empty {
             let value = self.buffer[self.first];
             self.first += 1;
@@ -144,9 +144,9 @@ impl<'a, T: Copy> RingBuffer<'a, T> {
                 self.empty = true;
             }
 
-            Ok(value)
+            Some(value)
         } else {
-            Err(())
+            None
         }
     }
 

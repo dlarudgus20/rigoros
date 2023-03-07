@@ -22,10 +22,10 @@ lazy_static! {
 pub fn intmsg_push(msg: InterruptMessage) {
     let mut queue = QUEUE.lock();
     if queue.len() < BUFFER_SIZE {
-        queue.try_push(msg).ok();
+        queue.try_push(msg);
     }
 }
 
-pub fn intmsg_pop() -> Result<InterruptMessage, ()> {
+pub fn intmsg_pop() -> Option<InterruptMessage> {
     QUEUE.lock().try_pop()
 }
