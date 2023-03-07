@@ -30,6 +30,10 @@ pic8259 = "0.10.2"
 pc-keyboard = "0.5.1"
 uart_16550 = "0.2.16"
 
+[dependencies.num_enum]
+version = "0.5.11"
+default-features = false
+
 [dependencies.lazy_static]
 version = "1.4.0"
 features = ["spin_no_std"]

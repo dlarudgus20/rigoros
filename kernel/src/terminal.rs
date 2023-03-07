@@ -785,8 +785,10 @@ macro_rules! println {
 
 #[macro_export]
 macro_rules! log {
-    (color: $c:expr, $($arg:tt)*) => ($crate::terminal::_log(Some($c), format_args!($($arg)*)));
-    ($($arg:tt)*) => ($crate::terminal::_log(None, format_args!($($arg)*)));
+    (nosep, color: $c:expr, $($arg:tt)*) => ($crate::terminal::_log(Some($c), false, format_args!($($arg)*)));
+    (nosep, $($arg:tt)*) => ($crate::terminal::_log(None, false, format_args!($($arg)*)));
+    (color: $c:expr, $($arg:tt)*) => ($crate::terminal::_log(Some($c), true, format_args!($($arg)*)));
+    ($($arg:tt)*) => ($crate::terminal::_log(None, true, format_args!($($arg)*)));
 }
 
 #[macro_export]
@@ -806,7 +808,7 @@ pub fn _print(color: Option<ColorCode>, args: fmt::Arguments) {
 }
 
 #[doc(hidden)]
-pub fn _log(color: Option<ColorCode>, args: fmt::Arguments) {
+pub fn _log(color: Option<ColorCode>, newline: bool, args: fmt::Arguments) {
     let mut term = TERM.lock();
     let mut serial = COM1.lock();
 
@@ -816,9 +818,14 @@ pub fn _log(color: Option<ColorCode>, args: fmt::Arguments) {
     };
 
     serial.write_fmt(args).ok();
-    serial.write_char('\n').ok();
+    if newline {
+        serial.write_char('\n').ok();
+    }
+
     writer.write_fmt(args).unwrap();
-    writer.write_char('\n').unwrap();
+    if newline {
+        writer.write_char('\n').unwrap();
+    }
 }
 
 #[doc(hidden)]

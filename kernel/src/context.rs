@@ -1,4 +1,3 @@
-#[allow(dead_code)]
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
 pub struct Context {

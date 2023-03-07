@@ -1,3 +1,4 @@
+use num_enum::TryFromPrimitive;
 use x86_64::registers::control::Cr3;
 use x86_64::structures::paging::page_table::PageTableEntry;
 use x86_64::{VirtAddr, PhysAddr};
@@ -6,7 +7,32 @@ use x86_64::structures::paging::{PageTable, PageTableFlags};
 use crate::log;
 use crate::terminal::ColorCode;
 
+#[repr(C)]
+struct MemoryMap {
+    len: usize,
+    entries: &'static [MemoryMapEntry],
+}
+
+#[repr(C)]
+struct MemoryMapEntry {
+    base: u64,
+    size: u64,
+    mem_type: u32,
+    attrib: u32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, TryFromPrimitive)]
+#[repr(u32)]
+enum MemoryEntryType {
+    Usable = 1,
+    Reserved = 2,
+    AcpiReclaimable = 3,
+    AcpiNVS = 4,
+    BadArea = 5,
+}
+
 const PAGE_TABLE_ADDR: u64 = 0xffff8000003f0000;
+const MEMORY_MAP_ADDR: u64 = 0xffff80001fe06000;
 
 const KERNEL_START_VIRT: u64 = 0xffff800000000000;
 const KERNEL_START_PHYS: u64 = 0x00200000;
@@ -32,6 +58,29 @@ pub unsafe fn init_page() {
     }
 
     invalidate_page_table();
+    print_memory();
+}
+
+pub fn print_memory() {
+    let map = get_memory_map();
+
+    log!(color: ColorCode::DEFAULT, "Memory map report: {} entries", map.len);
+    for entry in map.entries {
+        log!(nosep, color: ColorCode::DEFAULT, "    [{:#018x}, {:#018x})", entry.base, entry.base + entry.size);
+        if let Ok(t) = MemoryEntryType::try_from(entry.mem_type) {
+            log!(color: ColorCode::DEFAULT, " {:?}", t);
+        }
+        else {
+            log!(color: ColorCode::DEFAULT, " (unknown)");
+        }
+    }
+}
+
+fn invalidate_page_table() {
+    unsafe {
+        let (table, flag) = Cr3::read();
+        Cr3::write(table, flag);
+    }
 }
 
 fn phys_addr_in_kernel(virt: VirtAddr) -> PhysAddr {
@@ -103,9 +152,12 @@ fn get_table_mut() -> &'static mut PageTable {
     }
 }
 
-fn invalidate_page_table() {
+fn get_memory_map() -> MemoryMap {
     unsafe {
-        let (table, flag) = Cr3::read();
-        Cr3::write(table, flag);
+        let len = *(MEMORY_MAP_ADDR as *const u16) as usize;
+        MemoryMap {
+            len,
+            entries: core::slice::from_raw_parts((MEMORY_MAP_ADDR + 8) as *const MemoryMapEntry, len),
+        }
     }
 }
