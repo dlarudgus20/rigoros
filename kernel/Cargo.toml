@@ -30,6 +30,14 @@ pic8259 = "0.10.2"
 pc-keyboard = "0.5.1"
 uart_16550 = "0.2.16"
 
+[dependencies.num-integer]
+version = "0.1.45"
+default-features = false
+
+[dependencies.num-iter]
+version = "0.1.43"
+default-features = false
+
 [dependencies.num_enum]
 version = "0.5.11"
 default-features = false

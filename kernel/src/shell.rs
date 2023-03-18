@@ -3,7 +3,7 @@ use arrayvec::ArrayVec;
 use crate::{print, println};
 use crate::terminal::{ColorCode, INPUT_MAXSIZE, start_inputting};
 use crate::pit;
-use crate::page;
+use crate::memory;
 use crate::task;
 
 struct Command(&'static str, fn (args: &ArrayVec<&str, INPUT_MAXSIZE>), &'static str, Option<&'static str>);
@@ -60,7 +60,7 @@ fn cmd_tick(_args: &ArrayVec<&str, INPUT_MAXSIZE>) {
 }
 
 fn cmd_print_page(_args: &ArrayVec<&str, INPUT_MAXSIZE>) {
-    page::print_page();
+    memory::print_page();
 }
 
 fn cmd_test_task(_args: &ArrayVec<&str, INPUT_MAXSIZE>) {

@@ -49,8 +49,10 @@ pub fn test_task() {
             println!("hello task(arg={})", arg);
             loop {
                 println!("task loop #{}, rsp={:#x}", COUNT, TASK.rsp);
-                COUNT += 1;
-                switch_context(&mut TASK, &CURRENT);
+                unsafe {
+                    COUNT += 1;
+                    switch_context(&mut TASK, &CURRENT);
+                }
             }
         }
 

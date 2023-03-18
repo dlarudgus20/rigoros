@@ -24,9 +24,11 @@ pub unsafe fn init_pit() {
 
     let count = (PIT_FREQ / TIMER_FREQ) as u16;
 
-    ctrl.write(PIT_CTRL_CNT0 | PIT_CTRL_LSBMSBRW | PIT_CTRL_MODE0 | PIT_CTRL_BINARY);
-    cnt0.write(count as u8);
-    cnt0.write((count >> 8) as u8);
+    unsafe {
+        ctrl.write(PIT_CTRL_CNT0 | PIT_CTRL_LSBMSBRW | PIT_CTRL_MODE0 | PIT_CTRL_BINARY);
+        cnt0.write(count as u8);
+        cnt0.write((count >> 8) as u8);
+    }
 }
 
 pub fn tick() -> u64 {

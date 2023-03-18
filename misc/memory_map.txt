@@ -9,12 +9,14 @@ Physical Memory
     [0x005f2000 ~ 0x005f3000)       page directory
     [0x005f3000 ~ 0x005f7000)       page table
 [0x00600000 ~ 0x00800000)       kernel stack
+[0x00800000 ~      -    )       dynamic memory
 
 Virtual Memory (Kernel)
 
 logical address                              physical address            description
 --------------------------------------------|---------------------------|------------------
 [0x00000000 00000000 ~ 0x00000000 00200000)   [0x00000000 ~ 0x00200000)   unused
+[0x00000000 00200000 ~ 0x00007fff ffffffff]   <    runtime binding    >   dynamic memory
 
 [0xffff8000 00000000 ~ 0xffffffff ffffffff]               -               kernel area
     [0xffff8000 00000000 ~ 0xffff8000 00100000)   [0x00200000 ~ 0x00300000)   kernel code
@@ -24,4 +26,12 @@ logical address                              physical address            descrip
     [0xffff8000 0f000000 ~ 0xffff8000 0f200000)   [0x00600000 ~ 0x00800000)   kernel stack
     [0xffff8000 0f200000 ~ 0xffff8000 1fe00000)               -               -
     [0xffff8000 1fe00000 ~ 0xffff8000 20000000)   [0x00000000 ~ 0x00200000)   lower 2MB memory
-    [0xffff8000 20000000 ~ 0xffff8000 40000000)   <    runtime binding    >   memory for I/O mapping
+    [0xffff8000 20000000 ~ 0xffffffff ffffffff)   <    runtime binding    >   memory for I/O mapping
+
+Virtual Memory (User)
+
+logical address                             description
+--------------------------------------------|------------------
+[0x00000000 00000000 ~ 0x00000000 00200000)   unused
+[0x00000000 00200000 ~ 0x00007fff ffffffff]   dynamic memory
+[0xffff8000 00000000 ~ 0xffffffff ffffffff]   kernel area

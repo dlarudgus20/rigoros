@@ -39,12 +39,14 @@ lazy_static! {
 }
 
 pub unsafe fn init_gdt() {
-    GDT.0.load();
-    DS::set_reg(GDT.1.data);
-    ES::set_reg(GDT.1.data);
-    FS::set_reg(GDT.1.data);
-    GS::set_reg(GDT.1.data);
-    SS::set_reg(GDT.1.data);
-    CS::set_reg(GDT.1.code);
-    load_tss(GDT.1.tss);
+    unsafe {
+        GDT.0.load();
+        DS::set_reg(GDT.1.data);
+        ES::set_reg(GDT.1.data);
+        FS::set_reg(GDT.1.data);
+        GS::set_reg(GDT.1.data);
+        SS::set_reg(GDT.1.data);
+        CS::set_reg(GDT.1.code);
+        load_tss(GDT.1.tss);
+    }
 }

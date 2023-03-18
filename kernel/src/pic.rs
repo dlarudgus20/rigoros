@@ -46,19 +46,25 @@ static PIC: Mutex<ChainedPics> = Mutex::new(unsafe {
 
 pub unsafe fn init_pic() {
     let mut pic = PIC.lock();
-    pic.initialize();
-    pic.disable();
+    unsafe {
+        pic.initialize();
+        pic.disable();
+    }
 }
 
 pub unsafe fn set_mask(mask: Mask) {
     let mut pic = PIC.lock();
     let bits = !mask.bits;
-    pic.write_masks(bits as u8, (bits >> 8) as u8);
+    unsafe {
+        pic.write_masks(bits as u8, (bits >> 8) as u8);
+    }
 }
 
 pub unsafe fn send_eoi(irq: Irq) {
     let mut pic = PIC.lock();
-    pic.notify_end_of_interrupt(PIC_INT_OFFSET + irq as u8);
+    unsafe {
+        pic.notify_end_of_interrupt(PIC_INT_OFFSET + irq as u8);
+    }
 }
 
 impl Irq {

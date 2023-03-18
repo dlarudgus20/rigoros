@@ -1,6 +1,7 @@
 #![no_std]
 #![feature(abi_x86_interrupt)]
 #![feature(const_mut_refs)]
+#![deny(unsafe_op_in_unsafe_fn)]
 
 pub mod fixed_writer;
 pub mod irq_mutex;
@@ -13,10 +14,11 @@ pub mod interrupt_queue;
 pub mod pit;
 pub mod keyboard;
 pub mod ring_buffer;
-pub mod page;
+pub mod memory;
 pub mod context;
 pub mod task;
 pub mod shell;
+pub mod buddyblock;
 
 use x86_64::instructions::interrupts;
 
@@ -37,7 +39,7 @@ pub extern "C" fn kmain() -> ! {
         idt::init_idt();
         log!("idt initialized");
 
-        page::init_page();
+        memory::init_memory();
         log!("page initialized");
 
         pic::init_pic();
