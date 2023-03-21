@@ -15,7 +15,7 @@ QEMU_DRIVES := -drive "file=$(TARGET_IMAGE)",index=0,if=floppy,format=raw,readon
 QEMU_FLAGS := -L . -m 64 $(QEMU_DRIVES) -boot a -rtc base=localtime -M pc -serial stdio
 BOCHSRC := bochsrc.bxrc
 
-.PHONY: all build re rebuild run rerun dbg debug gdb bochs mostlyclean clean distclean
+.PHONY: all build re rebuild run rerun dbg debug gdb bochs test mostlyclean clean distclean
 
 build:
 	make -C tools
@@ -41,6 +41,9 @@ gdb:
 
 bochs: build
 	CONFIG=$(CONFIG) $(TOOLSET_BOCHS) -qf $(BOCHSRC)
+
+test:
+	make test -C kernel
 
 mostlyclean:
 	make mostlyclean -C bootloader

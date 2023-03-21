@@ -9,12 +9,15 @@ RUST_OUTPUT_DEP := $(abspath $(RUST_OUTPUT_DIR)/libkernel.d)
 
 DEPENDENCIES += $(RUST_OUTPUT_DEP)
 
-CARGO_FLAG += -Z build-std=core,compiler_builtins -Z build-std-features=compiler-builtins-mem
-CARGO_DEPS := Cargo.toml x86_64-unknown-none.json .cargo/config.toml rust-toolchain
+CUSTOM_TARGET := x86_64-unknown-none.json
+CARGO_FLAG += --target $(CUSTOM_TARGET) -Z build-std=core,compiler_builtins -Z build-std-features=compiler-builtins-mem
+CARGO_DEPS := Cargo.toml $(CUSTOM_TARGET) rust-toolchain
 
 CODE_SECTIONS := .startup .text
 
 LIBRARIES := $(RUST_OUTPUT_LIB)
+
+PHONY_TARGETS += test
 
 include ../mkfiles/rules.mk
 
@@ -23,6 +26,9 @@ TARGET_BINARY := $(DIR_BIN)/kernel.sys
 # rules
 
 build: $(TARGET_BINARY)
+
+test:
+	cargo test
 
 cleanimpl:
 	cargo clean

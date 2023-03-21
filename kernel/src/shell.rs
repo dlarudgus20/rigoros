@@ -8,11 +8,13 @@ use crate::task;
 
 struct Command(&'static str, fn (args: &ArrayVec<&str, INPUT_MAXSIZE>), &'static str, Option<&'static str>);
 
-const COMMAND: [Command; 4] = [
-    Command("help",         cmd_help,       "show help",        Some("help (specific command)")),
-    Command("tick",         cmd_tick,       "show tick count",  None),
-    Command("print-page",   cmd_print_page, "print page table", None),
-    Command("test-task",    cmd_test_task,  "run test task",    None),
+const COMMAND: [Command; 6] = [
+    Command("help",         cmd_help,           "show help",            Some("help (specific command)")),
+    Command("tick",         cmd_tick,           "show tick count",      None),
+    Command("print-page",   cmd_print_page,     "print page table",     None),
+    Command("test-task",    cmd_test_task,      "run test task",        None),
+    Command("testdynseq",   cmd_test_dyn_seq,   "test dynamic memory in sequencial order", None),
+    Command("testdynran",   cmd_test_dyn_ran,   "test dynamic memory in random order", None),
 ];
 
 pub fn prompt() {
@@ -65,4 +67,12 @@ fn cmd_print_page(_args: &ArrayVec<&str, INPUT_MAXSIZE>) {
 
 fn cmd_test_task(_args: &ArrayVec<&str, INPUT_MAXSIZE>) {
     task::test_task();
+}
+
+fn cmd_test_dyn_seq(_args: &ArrayVec<&str, INPUT_MAXSIZE>) {
+    memory::test_dyn_seq();
+}
+
+fn cmd_test_dyn_ran(_args: &ArrayVec<&str, INPUT_MAXSIZE>) {
+    todo!();
 }

@@ -1,15 +1,12 @@
 use core::{fmt, str};
 use core::fmt::Write;
-use core::panic::PanicInfo;
 use volatile::Volatile;
 use lazy_static::lazy_static;
-use arrayvec::{ArrayVec, ArrayString};
+use arrayvec::ArrayVec;
 use pc_keyboard::{KeyCode, DecodedKey};
 use x86_64::instructions::port::Port;
-use x86_64::instructions::interrupts::without_interrupts;
 
 use crate::irq_mutex::IrqMutex;
-use crate::fixed_writer::FixedWriter;
 use crate::ring_buffer::RingBuffer;
 use crate::serial::COM1;
 
@@ -842,8 +839,12 @@ pub fn _print_status(kind: StatusLineKind, line: usize, args: fmt::Arguments) {
     writer.write_fmt(args).unwrap();
 }
 
+#[cfg(not(test))]
 #[panic_handler]
-fn panic(info: &PanicInfo) -> ! {
+fn panic(info: &core::panic::PanicInfo) -> ! {
+    use arrayvec::ArrayString;
+    use x86_64::instructions::interrupts::without_interrupts;
+    use crate::fixed_writer::FixedWriter;
     without_interrupts(|| {
         if let Some(mut term) = TERM.try_lock() {
             write!(TerminalWriter { term: &mut term, color: ColorCode::PANIC }, "[PANIC] {}", info).ok();
