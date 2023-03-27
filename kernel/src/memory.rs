@@ -41,7 +41,7 @@ struct PageInitWalker {
     next_table: *mut PageTable,
     tables: [*mut PageTable; 4],
     indices: [u16; 4],
-    map: MemoryMap,
+    skip: u32,
 }
 
 struct MemoryData {
@@ -172,6 +172,8 @@ fn create_tmp_page(pml4t: &mut PageTable) {
             let addr = DYNMEM_START_PHYS + (idx as u64) * PAGE_SIZE;
             (*pt)[idx].set_addr(PhysAddr::new(addr), flags);
         }
+
+        pml4t[1].set_unused();
     }
 }
 
@@ -179,7 +181,7 @@ unsafe fn create_dyn_page(pml4t: &mut PageTable, map: MemoryMap, start_virt: u64
     let flags = PageTableFlags::WRITABLE | PageTableFlags::PRESENT;
 
     let mut walker = unsafe {
-        PageInitWalker::new(&mut *pml4t, start_virt as *mut PageTable, 1, map)
+        PageInitWalker::new(&mut *pml4t, start_virt as *mut PageTable, 1)
     };
     let mut page_count = 0;
 
@@ -188,11 +190,9 @@ unsafe fn create_dyn_page(pml4t: &mut PageTable, map: MemoryMap, start_virt: u64
         let stop = entry.base + entry.size;
         for base in range_step(start, stop, PAGE_SIZE) {
             page_count += 1;
-            walker.next_set(PhysAddr::new(base), flags);
+            walker.next_set(PhysAddr::new(base), flags, map, start_virt);
         }
     }
-
-    pml4t[1].set_unused();
 
     let total_len = page_count * (PAGE_SIZE as usize);
     let page_table_len = walker.count() * (PAGE_SIZE as usize);
@@ -201,7 +201,7 @@ unsafe fn create_dyn_page(pml4t: &mut PageTable, map: MemoryMap, start_virt: u64
 }
 
 impl PageInitWalker {
-    unsafe fn new(pml4t: *mut PageTable, pdpt: *mut PageTable, first_dir: u16, map: MemoryMap) -> Self {
+    unsafe fn new(pml4t: *mut PageTable, pdpt: *mut PageTable, first_dir: u16) -> Self {
         unsafe {
             let pdt = pdpt.add(1);
             let pt = pdt.add(1);
@@ -210,8 +210,8 @@ impl PageInitWalker {
                 start_table: pdpt,
                 next_table,
                 tables: [pml4t, pdpt, pdt, pt],
-                indices: [1, 1, first_dir + 1, 0],
-                map,
+                indices: [1, 1, first_dir + 1, 3],
+                skip: 3,
             }
         }
     }
@@ -220,18 +220,19 @@ impl PageInitWalker {
         unsafe { self.next_table.offset_from(self.start_table) as usize }
     }
 
-    fn next_set(&mut self, addr: PhysAddr, flags: PageTableFlags) {
-        self.next_set_recur(3, addr, flags);
+    fn next_set(&mut self, addr: PhysAddr, flags: PageTableFlags, map: MemoryMap, start_virt: u64) {
+        if self.skip == 0 {
+            self.next_set_recur(3, addr, flags, map, start_virt);
+        }
+        else {
+            self.skip -= 1;
+        }
     }
 
-    fn next_set_recur(&mut self, level: usize, addr: PhysAddr, flags: PageTableFlags) {
-        let table = unsafe { &mut (*self.tables[level]) };
-        table[self.indices[level] as usize].set_addr(addr, flags);
-        self.indices[level] += 1;
+    fn next_set_recur(&mut self, level: usize, addr: PhysAddr, flags: PageTableFlags, map: MemoryMap, start_virt: u64) {
+        assert!(!(level == 0 && self.indices[level] >= 256), "PageTableWalker::next() out of bound");
 
         if self.indices[level] >= 512 {
-            assert_ne!(level, 0, "PageTableWalker::next() out of bound");
-
             let next = self.next_table;
             unsafe {
                 (*next).zero();
@@ -240,14 +241,18 @@ impl PageInitWalker {
             self.indices[level] = 0;
             self.next_table = unsafe { next.add(1) };
 
-            let next_phys = virt_to_phys_dynmem(VirtAddr::from_ptr(next), self.map);
-            self.next_set_recur(level - 1, next_phys, flags);
+            let next_phys = virt_to_phys_dynmem(VirtAddr::from_ptr(next), map, start_virt);
+            self.next_set_recur(level - 1, next_phys, flags, map, start_virt);
         }
+
+        let table = unsafe { &mut (*self.tables[level]) };
+        table[self.indices[level] as usize].set_addr(addr, flags);
+        self.indices[level] += 1;
     }
 }
 
-fn virt_to_phys_dynmem(virt: VirtAddr, map: MemoryMap) -> PhysAddr {
-    let offset = virt.as_u64() - DYNMEM_START_VIRT;
+fn virt_to_phys_dynmem(virt: VirtAddr, map: MemoryMap, start_virt: u64) -> PhysAddr {
+    let offset = virt.as_u64() - start_virt;
 
     let mut sum = 0;
     for entry in map.entries {
@@ -263,11 +268,11 @@ fn virt_to_phys_dynmem(virt: VirtAddr, map: MemoryMap) -> PhysAddr {
     panic!("invalid dynmem virtual address");
 }
 
-fn phys_to_virt_dynmem(phys: PhysAddr, map: MemoryMap) -> VirtAddr {
+fn phys_to_virt_dynmem(phys: PhysAddr, map: MemoryMap, start_virt: u64) -> VirtAddr {
     let mut sum = 0;
     for entry in map.entries {
         if (entry.base..entry.base + entry.size).contains(&phys.as_u64()) {
-            let virt = DYNMEM_START_VIRT + sum + (phys.as_u64() - entry.base);
+            let virt = start_virt + sum + (phys.as_u64() - entry.base);
             return VirtAddr::new(virt);
         }
 
@@ -290,7 +295,7 @@ fn phys_to_virt_kernel(phys: PhysAddr) -> VirtAddr {
 
 fn phys_to_virt(phys: PhysAddr) -> VirtAddr {
     if phys.as_u64() >= DYNMEM_START_PHYS {
-        phys_to_virt_dynmem(phys, get_memory_map())
+        phys_to_virt_dynmem(phys, get_memory_map(), DYNMEM_START_VIRT)
     }
     else if phys.as_u64() < KSTACK_START_PHYS {
         phys_to_virt_kernel(phys)
@@ -443,9 +448,10 @@ fn slice_remove<T, F : Fn(&T) -> bool>(slice: &mut [T], predicate: F) -> usize {
 #[cfg(test)]
 mod tests {
     use super::{*};
+    use std::vec;
 
     #[test]
-    fn test_dynmem_map() {
+    fn test_extract_dynmem_map() {
         let mut test_map = [
             MemoryMapEntry { base: 0x03000000, size: 0x01000000, mem_type: 1, attrib: 0 },
             MemoryMapEntry { base: 0x00000000, size: 0x01040000, mem_type: 1, attrib: 0 },
@@ -464,24 +470,52 @@ mod tests {
         assert_eq!(result, expected);
     }
 
-    /*
-    // std::vec?
+    #[derive(Clone, Copy)]
+    #[repr(C, align(4096))]
+    struct TestPage {
+        data: [u8; 4096]
+    }
+
+    fn test_create_dyn_page<const N: usize>(map: &'static [MemoryMapEntry; N], dyn_size: u64) {
+        let mut pml4t = PageTable::new();
+        let mem = vec![TestPage { data: [0; 4096] }; dyn_size as usize / 4096];
+        let start_virt = mem.as_ptr() as u64;
+
+        let (total_len, page_table_len) = unsafe {
+            create_dyn_page(&mut pml4t, MemoryMap { entries: map }, start_virt)
+        };
+
+        let pages = div_ceil(dyn_size, 4096);
+        let pts = div_ceil(pages, 512);
+        let directories = div_ceil(pts, 512);
+        let pdts = div_ceil(directories, 512);
+        let pointers = div_ceil(pts, 512);
+        let pdpts = div_ceil(pointers, 512);
+        let expected_len = pts * 4096 + pdts * 4096 + pdpts * 4096;
+        println!("total={:#x} ptlen={:#x} expected={:#x}", total_len, page_table_len, expected_len);
+
+        assert_eq!(total_len as u64, dyn_size, "total_len");
+        assert_eq!(page_table_len as u64, expected_len, "page_table_len");
+    }
+
     #[test]
-    fn test_dyn_page() {
-        let map = [
+    fn test_create_dyn_page_single_entry() {
+        const MEMMAP: [MemoryMapEntry; 1] = [
+            MemoryMapEntry { base: 0x00800000, size: 0x01000000, mem_type: 1, attrib: 0 },
+        ];
+
+        test_create_dyn_page(&MEMMAP, 0x01000000);
+    }
+
+    #[test]
+    fn test_create_dyn_page_multiple_entries() {
+        const MEMMAP: [MemoryMapEntry; 4] = [
             MemoryMapEntry { base: 0x00800000, size: 0x00840000, mem_type: 1, attrib: 0 },
             MemoryMapEntry { base: 0x01040000, size: 0x00fc0000, mem_type: 1, attrib: 0 },
             MemoryMapEntry { base: 0x02000000, size: 0x01000000, mem_type: 1, attrib: 0 },
             MemoryMapEntry { base: 0x03000000, size: 0x01000000, mem_type: 1, attrib: 0 },
         ];
 
-        let mut pml4t = PageTable::new();
-        let mem = vec![0u8; 0x04000000];
-        let (total_len, page_table_len) = unsafe {
-            create_dyn_page(&mut pml4t, MemoryMap { entries: &map }, &mem[0] as u64)
-        };
-
-        todo!();
+        test_create_dyn_page(&MEMMAP, 0x03800000);
     }
-    */
 }

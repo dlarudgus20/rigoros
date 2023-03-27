@@ -156,15 +156,16 @@ impl fmt::Display for StackFrame {
 
 impl fmt::Display for PFCode {
     fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-        let p = match self.0 { PageFaultErrorCode::PROTECTION_VIOLATION => "P", _ => "p" };
-        let w = match self.0 { PageFaultErrorCode::CAUSED_BY_WRITE => "W", _ => "w" };
-        let u = match self.0 { PageFaultErrorCode::USER_MODE => "U", _ => "u" };
-        let r = match self.0 { PageFaultErrorCode::MALFORMED_TABLE => "R", _ => "r" };
-        let i = match self.0 { PageFaultErrorCode::INSTRUCTION_FETCH => "I", _ => "i" };
-        let k = match self.0 { PageFaultErrorCode::PROTECTION_KEY => "K", _ => "k" };
-        let s = match self.0 { PageFaultErrorCode::SHADOW_STACK => "S", _ => "s" };
-        let g = match self.0 { PageFaultErrorCode::SGX => "G", _ => "g" };
-        let m = match self.0 { PageFaultErrorCode::RMP => "M", _ => "m" };
-        write!(formatter, "{:#018x} {}{}{}{}{}{}{}{}{}", self.0.bits(), m, g, s, k, i, r, u, w, p)
+        //let p = match self.0 { PageFaultErrorCode::PROTECTION_VIOLATION => "P", _ => "p" };
+        //let w = match self.0 { PageFaultErrorCode::CAUSED_BY_WRITE => "W", _ => "w" };
+        //let u = match self.0 { PageFaultErrorCode::USER_MODE => "U", _ => "u" };
+        //let r = match self.0 { PageFaultErrorCode::MALFORMED_TABLE => "R", _ => "r" };
+        //let i = match self.0 { PageFaultErrorCode::INSTRUCTION_FETCH => "I", _ => "i" };
+        //let k = match self.0 { PageFaultErrorCode::PROTECTION_KEY => "K", _ => "k" };
+        //let s = match self.0 { PageFaultErrorCode::SHADOW_STACK => "S", _ => "s" };
+        //let g = match self.0 { PageFaultErrorCode::SGX => "G", _ => "g" };
+        //let m = match self.0 { PageFaultErrorCode::RMP => "M", _ => "m" };
+        //write!(formatter, "{:#018x} {}{}{}{}{}{}{}{}{}", self.0.bits(), m, g, s, k, i, r, u, w, p)
+        write!(formatter, "{:?}", self.0)
     }
 }

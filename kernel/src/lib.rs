@@ -1,4 +1,5 @@
-#![no_std]
+#![cfg_attr(not(test), no_std)]
+
 #![feature(abi_x86_interrupt)]
 #![feature(const_mut_refs)]
 #![deny(unsafe_op_in_unsafe_fn)]
