@@ -6,11 +6,12 @@ use crate::{pit, memory, task};
 
 struct Command(&'static str, fn (args: &ArrayVec<&str, INPUT_MAXSIZE>), &'static str, Option<&'static str>);
 
-const COMMAND: [Command; 6] = [
+const COMMAND: [Command; 7] = [
     Command("help",         cmd_help,           "show help",            Some("help (specific command)")),
     Command("tick",         cmd_tick,           "show tick count",      None),
-    Command("print-page",   cmd_print_page,     "print page table",     None),
-    Command("test-task",    cmd_test_task,      "run test task",        None),
+    Command("printpage",    cmd_print_page,     "print page table",     None),
+    Command("meminfo",      cmd_mem_info,       "print memory info",    None),
+    Command("testtask",     cmd_test_task,      "run test task",        Some("testtask (--quit)")),
     Command("testdynseq",   cmd_test_dyn_seq,   "test dynamic memory in sequencial order", None),
     Command("testdynran",   cmd_test_dyn_ran,   "test dynamic memory in random order", None),
 ];
@@ -63,13 +64,28 @@ fn cmd_print_page(_args: &ArrayVec<&str, INPUT_MAXSIZE>) {
     memory::print_page();
 }
 
-fn cmd_test_task(_args: &ArrayVec<&str, INPUT_MAXSIZE>) {
-    task::test_task();
+fn cmd_mem_info(_args: &ArrayVec<&str, INPUT_MAXSIZE>) {
+    let info = memory::allocator_info();
+    println!("===dynamic memory allocator infomation===");
+    println!("metadata address     : {:#018x}", info.buddy.raw_addr());
+    println!("metadata size        : {:#018x}", info.buddy.metadata_len());
+    println!("count of unit blocks : {:#018x}", info.buddy.units());
+    println!("total bitmap level   : {}", info.buddy.levels());
+    println!("=========================================");
+    println!("start address        : {:#018x}", info.buddy.data_addr());
+    println!("dynmem size          : {:#018x}", info.buddy.data_len());
+    println!("used size            : {:#018x}", info.used);
+    println!("=========================================");
+}
+
+fn cmd_test_task(args: &ArrayVec<&str, INPUT_MAXSIZE>) {
+    let quit = args.len() >= 2 && args[1] == "--quit";
+    task::test_task(quit);
 }
 
 fn cmd_test_dyn_seq(_args: &ArrayVec<&str, INPUT_MAXSIZE>) {
     use core::slice::from_raw_parts_mut;
-    use memory::{PAGE_SIZE, allocate, deallocate, allocator_info, allocator_size_info};
+    use memory::{PAGE_SIZE, alloc_zero, deallocate, allocator_info, allocator_size_info};
 
     let info = allocator_info();
 
@@ -87,7 +103,7 @@ fn cmd_test_dyn_seq(_args: &ArrayVec<&str, INPUT_MAXSIZE>) {
 
         print!("Alloc & Comp : ");
         for index in 0..block_count {
-            if let Some(addr) = allocate(size) {
+            if let Some(addr) = alloc_zero(size) {
                 let slice = unsafe { from_raw_parts_mut(addr as *mut u32, size / 4) };
                 for (idx, x) in slice.iter_mut().enumerate() {
                     unsafe { core::ptr::write_volatile(&mut *x, idx as u32) };

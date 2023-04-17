@@ -68,8 +68,7 @@ fn test_seq() {
 
         print!("Alloc & Comp : ");
         for index in 0..block_count {
-            if let Some(addr) = buddy.alloc(size) {
-                //println!("alloc: [{:#x}, {:#x})", addr, addr + size);
+            if let Some(addr) = buddy.alloc(size - 1) { // test unaligned
                 let slice = unsafe { from_raw_parts_mut(addr as *mut u32, size / 4) };
                 for (idx, x) in slice.iter_mut().enumerate() {
                     unsafe { core::ptr::write_volatile(&mut *x, idx as u32) };
@@ -93,7 +92,7 @@ fn test_seq() {
         print!("\nDeallocation : ");
         for index in 0..block_count {
             let addr = buddy.info().data_addr() + size * index;
-            buddy.dealloc(addr, size);
+            buddy.dealloc(addr + 1, size - 1); // test unaligned
             print!(".");
         }
 

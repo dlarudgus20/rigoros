@@ -241,8 +241,8 @@ impl<'a> BuddyBlock<'a> {
         let data_len = self.info.data_len();
 
         let aligned_addr = addr / UNIT_SIZE * UNIT_SIZE;
-        let aligned_len = div_ceil(len, UNIT_SIZE) * UNIT_SIZE;
-        let aligned_end = aligned_addr + aligned_len;
+        let aligned_end = div_ceil(addr + len, UNIT_SIZE) * UNIT_SIZE;
+        let aligned_len = aligned_end - aligned_addr;
 
         assert!(data_addr <= aligned_addr && aligned_addr < data_addr + data_len);
         assert!(data_addr < aligned_end && aligned_end <= data_addr + data_len);

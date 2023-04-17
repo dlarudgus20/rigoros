@@ -343,7 +343,7 @@ pub fn allocator_size_info() -> AllocatorSizeInfo {
     }
 }
 
-pub fn allocate(len: usize) -> Option<usize> {
+pub fn alloc_zero(len: usize) -> Option<usize> {
     let mut data = MEMORY_DATA.lock();
     data.buddyblock.alloc(len).map(|addr| {
         unsafe {
