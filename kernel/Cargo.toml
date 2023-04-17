@@ -29,6 +29,7 @@ x86_64 = "0.14.8"
 pic8259 = "0.10.2"
 pc-keyboard = "0.5.1"
 uart_16550 = "0.2.16"
+buddyblock = { path = "../buddyblock" }
 
 [dependencies.num-integer]
 version = "0.1.45"

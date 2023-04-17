@@ -17,8 +17,6 @@ CODE_SECTIONS := .startup .text
 
 LIBRARIES := $(RUST_OUTPUT_LIB)
 
-PHONY_TARGETS += test
-
 include ../mkfiles/rules.mk
 
 TARGET_BINARY := $(DIR_BIN)/kernel.sys

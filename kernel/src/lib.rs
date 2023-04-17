@@ -19,7 +19,6 @@ pub mod memory;
 pub mod context;
 pub mod task;
 pub mod shell;
-pub mod buddyblock;
 
 use x86_64::instructions::interrupts;
 

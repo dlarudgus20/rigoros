@@ -7,9 +7,10 @@ use x86_64::structures::paging::page_table::PageTableEntry;
 use x86_64::{VirtAddr, PhysAddr};
 use x86_64::structures::paging::{PageTable, PageTableFlags};
 
+use buddyblock::{BuddyBlock, BuddyBlockInfo};
+
 use crate::log;
 use crate::irq_mutex::IrqMutex;
-use crate::buddyblock::{BuddyBlock, BuddyBlockInfo};
 use crate::terminal::ColorCode;
 
 #[derive(Copy, Clone)]
@@ -49,6 +50,16 @@ struct MemoryData {
     page_table_len: usize,
     buddy_len: usize,
     buddyblock: BuddyBlock<'static>,
+}
+
+pub struct AllocatorInfo {
+    pub buddy: BuddyBlockInfo,
+    pub used: usize,
+}
+
+pub struct AllocatorSizeInfo {
+    pub len: usize,
+    pub used: usize,
 }
 
 const DYNMEM_START_PHYS: u64 = 0x00800000;
@@ -308,12 +319,28 @@ fn phys_to_virt(phys: PhysAddr) -> VirtAddr {
 unsafe fn init_dyn_alloc() {
     let mut data = MEMORY_DATA.lock();
     let start = (DYNMEM_START_VIRT as usize) + data.page_table_len;
-    let end = (DYNMEM_START_VIRT as usize) + data.total_len;
+    let len = data.total_len - data.page_table_len;
 
-    let info = BuddyBlockInfo::new(start, end - start);
-    data.buddy_len = info.metadata_offset();
+    data.buddyblock = unsafe {
+        BuddyBlock::new(start, len)
+    };
+    data.buddy_len = data.buddyblock.info().data_offset();
+}
 
-    data.buddyblock = unsafe { BuddyBlock::new(start as *mut u8, info) };
+pub fn allocator_info() -> AllocatorInfo {
+    let data = MEMORY_DATA.lock();
+    AllocatorInfo {
+        buddy: *data.buddyblock.info(),
+        used: data.buddyblock.used(),
+    }
+}
+
+pub fn allocator_size_info() -> AllocatorSizeInfo {
+    let data = MEMORY_DATA.lock();
+    AllocatorSizeInfo {
+        len: data.buddyblock.info().data_len(),
+        used: data.buddyblock.used(),
+    }
 }
 
 pub fn allocate(len: usize) -> Option<usize> {
@@ -329,11 +356,6 @@ pub fn allocate(len: usize) -> Option<usize> {
 pub fn deallocate(addr: usize, len: usize) {
     let mut data = MEMORY_DATA.lock();
     data.buddyblock.dealloc(addr, len);
-}
-
-pub fn test_dyn_seq() {
-    let mut data = MEMORY_DATA.lock();
-    data.buddyblock.test_seq();
 }
 
 pub fn print_dynmem_map() {

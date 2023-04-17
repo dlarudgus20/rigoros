@@ -1,7 +1,3 @@
-ifndef TARGET_NAME
-$(error target name must be specified)
-endif
-
 LIBRARIES +=
 
 C_SOURCES += $(wildcard $(DIR_SRC)/*.c)
@@ -15,10 +11,14 @@ DEPENDENCIES += $(patsubst $(DIR_SRC)/%.c, $(DIR_DEP)/%.c.d, $(C_SOURCES)) \
 
 LD_SCRIPT := linker.ld
 
+ifdef TARGET_NAME
 TARGET_ELF := $(DIR_BIN)/$(TARGET_NAME).elf
+endif
 
-PHONY_TARGETS += all build rebuild mostlyclean clean distclean cleanimpl
+PHONY_TARGETS += all build test rebuild mostlyclean clean distclean cleanimpl
 .PHONY: $(PHONY_TARGETS)
+
+test:
 
 rebuild:
 	make clean
@@ -34,6 +34,7 @@ clean: mostlyclean
 
 distclean: clean clean_dirs
 
+ifdef TARGET_NAME
 $(TARGET_ELF): $(LD_SCRIPT) $(C_OBJECTS) $(AS_OBJECTS) $(LIBRARIES) | $(DIRS)
 	$(TOOLSET_GCC) $(LDFLAGS) -T $(LD_SCRIPT) -o $@ $(C_OBJECTS) $(AS_OBJECTS) $(LIBRARIES) \
 		-Xlinker -Map=$(DIR_OBJ)/$(TARGET_NAME).map
@@ -46,6 +47,7 @@ endif
 	$(TOOLSET_NM) -C --numeric-sort $@ \
 		| perl -p -e 's/([0-9a-fA-F]*) ([0-9a-fA-F]* .|.) ([^\s]*)(^$$|.*)/\1 \3/g' \
 		> $(DIR_OBJ)/$(TARGET_NAME).sym
+endif
 
 $(DIR_OBJ)/%.c.o: $(DIR_SRC)/%.c | $(DIRS)
 	$(TOOLSET_GCC) $(CFLAGS) -c $< -o $@

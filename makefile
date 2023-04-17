@@ -15,12 +15,15 @@ QEMU_DRIVES := -drive "file=$(TARGET_IMAGE)",index=0,if=floppy,format=raw,readon
 QEMU_FLAGS := -L . -m 64 $(QEMU_DRIVES) -boot a -rtc base=localtime -M pc -serial stdio
 BOCHSRC := bochsrc.bxrc
 
+SUBDIRS := buddyblock kernel bootloader
+
 .PHONY: all build re rebuild run rerun dbg debug gdb bochs test mostlyclean clean distclean
 
 build:
 	make -C tools
-	make build -C kernel
-	make build -C bootloader
+	for dir in $(SUBDIRS); do \
+		make build -C $$dir || exit 1; \
+	done
 	make $(TARGET_IMAGE)
 
 re: rebuild
@@ -43,20 +46,25 @@ bochs: build
 	CONFIG=$(CONFIG) $(TOOLSET_BOCHS) -qf $(BOCHSRC)
 
 test:
-	make test -C kernel
+	for dir in $(SUBDIRS); do \
+		make test -C $$dir || exit 1; \
+	done
 
 mostlyclean:
-	make mostlyclean -C bootloader
-	make mostlyclean -C kernel
+	for dir in $(SUBDIRS); do \
+		make mostlyclean -C $$dir || exit 1; \
+	done
 
 clean:
-	make clean -C bootloader
-	make clean -C kernel
+	for dir in $(SUBDIRS); do \
+		make clean -C $$dir || exit 1; \
+	done
 	-rm -rf $(DIR_BIN)/*
 
 distclean:
-	make distclean -C bootloader
-	make distclean -C kernel
+	for dir in $(SUBDIRS); do \
+		make distclean -C $$dir || exit 1; \
+	done
 	make distclean -C tools
 	-rm -rf $(DIR_BIN)
 

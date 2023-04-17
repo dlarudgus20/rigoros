@@ -2,9 +2,7 @@ use arrayvec::ArrayVec;
 
 use crate::{print, println};
 use crate::terminal::{ColorCode, INPUT_MAXSIZE, start_inputting};
-use crate::pit;
-use crate::memory;
-use crate::task;
+use crate::{pit, memory, task};
 
 struct Command(&'static str, fn (args: &ArrayVec<&str, INPUT_MAXSIZE>), &'static str, Option<&'static str>);
 
@@ -70,7 +68,59 @@ fn cmd_test_task(_args: &ArrayVec<&str, INPUT_MAXSIZE>) {
 }
 
 fn cmd_test_dyn_seq(_args: &ArrayVec<&str, INPUT_MAXSIZE>) {
-    memory::test_dyn_seq();
+    use core::slice::from_raw_parts_mut;
+    use memory::{PAGE_SIZE, allocate, deallocate, allocator_info, allocator_size_info};
+
+    let info = allocator_info();
+
+    println!("memory chunk starts at {:#x}", info.buddy.data_addr());
+    println!("data range: [{:#x}, {:#x})", info.buddy.data_addr(), info.buddy.raw_addr() + info.buddy.total_len());
+
+    for level in 0..info.buddy.levels() {
+        let block_count = info.buddy.units() >> level;
+        let size = (PAGE_SIZE as usize) << level;
+
+        println!("Bitmap Level #{} (block_count={}, size={:#x})", level, block_count, size);
+
+        let mut szinfo = allocator_size_info();
+        assert_eq!(szinfo.used, 0);
+
+        print!("Alloc & Comp : ");
+        for index in 0..block_count {
+            if let Some(addr) = allocate(size) {
+                let slice = unsafe { from_raw_parts_mut(addr as *mut u32, size / 4) };
+                for (idx, x) in slice.iter_mut().enumerate() {
+                    unsafe { core::ptr::write_volatile(&mut *x, idx as u32) };
+                }
+                for (idx, x) in slice.iter().enumerate() {
+                    let data = unsafe { core::ptr::read_volatile(&*x) };
+                    if data != idx as u32 {
+                        println!("comparison fail: level={} size={} index={}", level, size, index);
+                    }
+                }
+                print!(".");
+            }
+            else {
+                println!("alloc() fail: level={} size={} index={}", level, size, index);
+                return;
+            }
+        }
+
+        szinfo = allocator_size_info();
+        assert_eq!(szinfo.used, szinfo.len / size * size);
+
+        print!("\nDeallocation : ");
+        for index in 0..block_count {
+            let addr = info.buddy.data_addr() + size * index;
+            deallocate(addr, size);
+            print!(".");
+        }
+
+        szinfo = allocator_size_info();
+        assert_eq!(szinfo.used, 0);
+
+        println!();
+    }
 }
 
 fn cmd_test_dyn_ran(_args: &ArrayVec<&str, INPUT_MAXSIZE>) {
