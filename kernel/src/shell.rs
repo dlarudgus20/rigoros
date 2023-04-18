@@ -6,10 +6,11 @@ use crate::{pit, memory, task};
 
 struct Command(&'static str, fn (args: &ArrayVec<&str, INPUT_MAXSIZE>), &'static str, Option<&'static str>);
 
-const COMMAND: [Command; 7] = [
+const COMMAND: [Command; 8] = [
     Command("help",         cmd_help,           "show help",            Some("help (specific command)")),
     Command("tick",         cmd_tick,           "show tick count",      None),
     Command("printpage",    cmd_print_page,     "print page table",     None),
+    Command("printmmap",    cmd_print_mmap,     "print memory map",     None),
     Command("meminfo",      cmd_mem_info,       "print memory info",    None),
     Command("testtask",     cmd_test_task,      "run test task",        Some("testtask (--quit)")),
     Command("testdynseq",   cmd_test_dyn_seq,   "test dynamic memory in sequencial order", None),
@@ -62,6 +63,11 @@ fn cmd_tick(_args: &ArrayVec<&str, INPUT_MAXSIZE>) {
 
 fn cmd_print_page(_args: &ArrayVec<&str, INPUT_MAXSIZE>) {
     memory::print_page();
+}
+
+fn cmd_print_mmap(_args: &ArrayVec<&str, INPUT_MAXSIZE>) {
+    memory::print_e820_map();
+    memory::print_dynmem_map();
 }
 
 fn cmd_mem_info(_args: &ArrayVec<&str, INPUT_MAXSIZE>) {

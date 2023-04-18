@@ -13,12 +13,12 @@ use crate::log;
 use crate::irq_mutex::IrqMutex;
 use crate::terminal::ColorCode;
 
-#[derive(Copy, Clone)]
+#[derive(Clone, Copy)]
 struct MemoryMap {
     entries: &'static [MemoryMapEntry],
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(C)]
 struct MemoryMapEntry {
     base: u64,
@@ -85,31 +85,46 @@ lazy_static! {
     });
 }
 
+lazy_static! {
+    static ref DYNMEM_MAP: MemoryMap = {
+        const BUFSIZE: usize = 1024;
+        static mut BUFFER: [MemoryMapEntry; BUFSIZE] = [MemoryMapEntry::zero(); BUFSIZE];
+
+        let e820 = get_e820_map();
+        let buffer = unsafe { &mut BUFFER };
+        let len = create_dynmem_map(e820.entries, buffer);
+
+        MemoryMap { entries: &buffer[0..len] }
+    };
+}
+
+impl MemoryMapEntry {
+    const fn zero() -> Self {
+        Self { attrib: 0, mem_type: 0, base: 0, size: 0 }
+    }
+}
+
 pub unsafe fn init_memory() {
-    print_memory("Memory map report");
+    get_memory_map(); // lazy-initialize
+
     unsafe {
-        init_memory_map();
         init_dyn_page();
         init_dyn_alloc();
     }
-    print_dynmem_map();
 }
 
-unsafe fn init_memory_map() {
-    let entries = unsafe { get_memory_map_mut() };
-
-    let len = extract_dynmem_map(entries);
-
-    unsafe {
-        set_memory_map_len(len as u16);
-    }
+fn get_memory_map() -> MemoryMap {
+    *DYNMEM_MAP
 }
 
-fn extract_dynmem_map(entries: &mut [MemoryMapEntry]) -> usize {
-    entries.sort_unstable_by_key(|x| x.base);
+fn create_dynmem_map(e820_entries: &[MemoryMapEntry], map_buffer: &mut [MemoryMapEntry]) -> usize {
+    let e820_len = e820_entries.len().min(map_buffer.len());
+    let buffer = &mut map_buffer[0..e820_len];
+    buffer.copy_from_slice(e820_entries);
+    buffer.sort_unstable_by_key(|x| x.base);
 
     let mut prev_end = DYNMEM_START_PHYS;
-    for entry in &mut *entries {
+    for entry in &mut *buffer {
         if MemoryEntryType::try_from(entry.mem_type) == Ok(MemoryEntryType::Usable) {
             let start = entry.base;
             let end = entry.base + entry.size;
@@ -128,7 +143,7 @@ fn extract_dynmem_map(entries: &mut [MemoryMapEntry]) -> usize {
         }
     }
 
-    slice_remove(entries, |x| x.mem_type != MemoryEntryType::Usable.into())
+    slice_remove(buffer, |x| x.mem_type != MemoryEntryType::Usable.into())
 }
 
 unsafe fn init_dyn_page() {
@@ -358,13 +373,15 @@ pub fn deallocate(addr: usize, len: usize) {
     data.buddyblock.dealloc(addr, len);
 }
 
-pub fn print_dynmem_map() {
-    print_memory("Dynamic Memory");
+pub fn print_e820_map() {
+    print_memory(get_e820_map(), "BIOS e820 Memory Map");
 }
 
-fn print_memory(title: &str) {
-    let map = get_memory_map();
+pub fn print_dynmem_map() {
+    print_memory(get_memory_map(), "Dynamic Memory Map");
+}
 
+fn print_memory(map: MemoryMap, title: &str) {
     log!(color: ColorCode::DEFAULT, "{}: {} entries", title, map.entries.len());
     for entry in map.entries {
         log!(nosep, color: ColorCode::DEFAULT, "    [{:#018x}, {:#018x})", entry.base, entry.base + entry.size);
@@ -436,19 +453,13 @@ fn get_table_mut() -> &'static mut PageTable {
     }
 }
 
-fn get_memory_map() -> MemoryMap {
-    MemoryMap { entries: unsafe { get_memory_map_mut() } }
-}
-
-unsafe fn get_memory_map_mut() -> &'static mut [MemoryMapEntry] {
+fn get_e820_map() -> MemoryMap {
     unsafe {
         let len = *(MEMORY_MAP_ADDR as *const u16) as usize;
-        core::slice::from_raw_parts_mut((MEMORY_MAP_ADDR + 8) as *mut MemoryMapEntry, len)
+        MemoryMap {
+            entries: core::slice::from_raw_parts((MEMORY_MAP_ADDR + 8) as *mut MemoryMapEntry, len)
+        }
     }
-}
-
-unsafe fn set_memory_map_len(len: u16) {
-    unsafe { *(MEMORY_MAP_ADDR as *mut u16) = len; }
 }
 
 // https://en.cppreference.com/w/cpp/algorithm/remove
@@ -473,8 +484,8 @@ mod tests {
     use std::vec;
 
     #[test]
-    fn test_extract_dynmem_map() {
-        let mut test_map = [
+    fn test_create_dynmem_map() {
+        let test_map = [
             MemoryMapEntry { base: 0x03000000, size: 0x01000000, mem_type: 1, attrib: 0 },
             MemoryMapEntry { base: 0x00000000, size: 0x01040000, mem_type: 1, attrib: 0 },
             MemoryMapEntry { base: 0x02000000, size: 0x01000000, mem_type: 1, attrib: 0 },
@@ -486,9 +497,9 @@ mod tests {
             MemoryMapEntry { base: 0x02000000, size: 0x01000000, mem_type: 1, attrib: 0 },
             MemoryMapEntry { base: 0x03000000, size: 0x01000000, mem_type: 1, attrib: 0 },
         ];
-
-        let len = extract_dynmem_map(&mut test_map);
-        let result = &test_map[0..len];
+        let mut buffer = [MemoryMapEntry::zero(); 16];
+        let len = create_dynmem_map(&test_map, &mut buffer);
+        let result = &buffer[0..len];
         assert_eq!(result, expected);
     }
 
