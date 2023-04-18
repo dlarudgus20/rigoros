@@ -1,7 +1,9 @@
+use lazy_static::lazy_static;
 use x86_64::VirtAddr;
 use x86_64::registers::rflags;
 
 use crate::println;
+use crate::irq_mutex::IrqMutex;
 use crate::context::{Context, switch_context};
 use crate::gdt::{KERNEL_CODE_SELECTOR, KERNEL_DATA_SELECTOR};
 
@@ -12,6 +14,16 @@ pub struct Task {
     stack_size: usize,
 }
 
+pub struct Scheduler {
+
+}
+
+lazy_static! {
+    static ref SCHEDULER: IrqMutex<Scheduler> = IrqMutex::new(Scheduler {
+
+    });
+}
+
 impl Task {
     pub fn new() {
 
@@ -20,7 +32,6 @@ impl Task {
 
 pub fn test_task(quit: bool) {
     use core::mem::size_of;
-    use lazy_static::lazy_static;
     use spin::Mutex;
     use crate::memory::{alloc_zero, deallocate};
 
