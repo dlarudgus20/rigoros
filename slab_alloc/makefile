@@ -2,7 +2,7 @@ all: build
 
 include ../mkfiles/conf.mk
 
-TARGET_NAME := buddyblock
+TARGET_NAME := slab_alloc
 
 RUST_OUTPUT_DIR := target/$(CARGO_TARGET_DIR)
 RUST_OUTPUT_LIB := $(abspath $(RUST_OUTPUT_DIR)/lib$(TARGET_NAME).rlib)
