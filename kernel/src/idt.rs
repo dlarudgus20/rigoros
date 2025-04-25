@@ -39,7 +39,7 @@ lazy_static! {
         idt.security_exception.set_handler_fn(security_exception_int_handler);
 
         // unknown
-        for i in 32..256 {
+        for i in 32..=255 {
             idt[i].set_handler_fn(unknown_int_handler);
         }
 
@@ -150,7 +150,7 @@ impl fmt::Display for StackFrame {
     fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
         let value = *self.0;
         write!(formatter, "cs:ip={:#06x}:{:#018x}, ss:sp={:#06x}:{:#018x}, rflags={:#018x}",
-            value.code_segment, value.instruction_pointer.as_u64(), value.stack_segment, value.stack_pointer.as_u64(), value.cpu_flags)
+            value.code_segment.0, value.instruction_pointer.as_u64(), value.stack_segment.0, value.stack_pointer.as_u64(), value.cpu_flags)
     }
 }
 

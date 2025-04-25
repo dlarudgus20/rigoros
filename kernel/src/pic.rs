@@ -54,7 +54,7 @@ pub unsafe fn init_pic() {
 
 pub unsafe fn set_mask(mask: Mask) {
     let mut pic = PIC.lock();
-    let bits = !mask.bits;
+    let bits = !mask.bits();
     unsafe {
         pic.write_masks(bits as u8, (bits >> 8) as u8);
     }
@@ -68,7 +68,7 @@ pub unsafe fn send_eoi(irq: Irq) {
 }
 
 impl Irq {
-    pub fn as_intn(self) -> usize {
-        (PIC_INT_OFFSET + self as u8).into()
+    pub fn as_intn(self) -> u8 {
+        PIC_INT_OFFSET + self as u8
     }
 }

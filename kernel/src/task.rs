@@ -37,7 +37,6 @@ pub fn test_task(quit: bool) {
 
     struct CtxData {
         parameter: u64,
-        count: u64,
         this: Context,
         main: Context,
         stack: [u8; 8192],
@@ -79,7 +78,6 @@ pub fn test_task(quit: bool) {
             data.this.rdi = data_raw as u64;
 
             data.parameter = parameter;
-            data.count = 0;
 
             *ctx_ptr = data_raw;
         }
@@ -94,9 +92,10 @@ pub fn test_task(quit: bool) {
     unsafe extern "C" fn task_main(arg: u64) {
         let data = unsafe { &mut *(arg as *mut CtxData) };
         println!("hello task(parameter={})", data.parameter);
+        let mut count = 1;
         loop {
-            println!("task loop #{}, rsp={:#x}", data.count, data.this.rsp);
-            data.count += 1;
+            println!("task loop #{}, rsp={:#x}", count, data.this.rsp);
+            count += 1;
             unsafe {
                 switch_context(&mut data.this, &data.main);
             }

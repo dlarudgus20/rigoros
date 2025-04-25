@@ -431,7 +431,10 @@ fn print_table_r(table: &PageTable, names: &[&str], depth: usize, virt: u64) {
                     if !present || table[idx - 1].addr().as_u64() + 0x1000 != table[idx].addr().as_u64() {
                         let page: &PageTableEntry = &table[first];
                         let len = (idx - first) as u64;
-                        let v = VirtAddr::new((virt << 9 | first as u64) << 12).as_u64();
+                        let flag = 0xffff800000000000;
+                        let v_raw = (virt << 9 | first as u64) << 12;
+                        let v_extended = if v_raw & flag == 0 { v_raw } else { v_raw | flag };
+                        let v = VirtAddr::new(v_extended).as_u64();
                         let p = page.addr().as_u64();
                         log!(color: ColorCode::DEFAULT, "   PT {:#018x}-{:#018x} to {:#x}-{:#x}", v, v + len * PAGE_SIZE, p, p + len * PAGE_SIZE);
 
