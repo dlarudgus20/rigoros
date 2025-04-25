@@ -12,10 +12,9 @@ pub enum InterruptMessage {
 const BUFFER_SIZE: usize = 4096;
 
 lazy_static! {
-    static ref QUEUE: IrqMutex<RingBuffer<'static, InterruptMessage>> = unsafe {
+    static ref QUEUE: IrqMutex<RingBuffer<InterruptMessage, BUFFER_SIZE>> = {
         const EMPTY: InterruptMessage = InterruptMessage::Timer();
-        static mut BUFFER: [InterruptMessage; BUFFER_SIZE] = [EMPTY; BUFFER_SIZE];
-        IrqMutex::new(RingBuffer::new(&mut BUFFER))
+        IrqMutex::new(RingBuffer::new_with(EMPTY))
     };
 }
 

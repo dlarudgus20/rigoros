@@ -24,16 +24,16 @@ lazy_static! {
         let mut tss = TaskStateSegment::new();
         tss.interrupt_stack_table[DOUBLE_FAULT_IST_INDEX as usize] = {
             static mut STACK: [u8; STACK_SIZE] = [0; STACK_SIZE];
-            VirtAddr::from_ptr(unsafe { &STACK }) + STACK_SIZE
+            VirtAddr::from_ptr(&raw mut STACK) + STACK_SIZE as u64
         };
         tss
     };
 
     static ref GDT: (GlobalDescriptorTable, Selectors) = {
         let mut gdt = GlobalDescriptorTable::new();
-        let code = gdt.add_entry(Descriptor::kernel_code_segment());
-        let data = gdt.add_entry(Descriptor::kernel_data_segment());
-        let tss = gdt.add_entry(Descriptor::tss_segment(&TSS));
+        let code = gdt.append(Descriptor::kernel_code_segment());
+        let data = gdt.append(Descriptor::kernel_data_segment());
+        let tss = gdt.append(Descriptor::tss_segment(&TSS));
         (gdt, Selectors { code, data, tss })
     };
 }

@@ -1,6 +1,7 @@
 use core::{fmt, str};
 use core::fmt::Write;
-use volatile::Volatile;
+use core::ptr::NonNull;
+use volatile::VolatileRef;
 use lazy_static::lazy_static;
 use arrayvec::ArrayVec;
 use pc_keyboard::{KeyCode, DecodedKey};
@@ -75,6 +76,17 @@ struct VideoChar {
 type VideoRow = [VideoChar; VIDEO_WIDTH];
 type VideoBuffer = [VideoRow; VIDEO_HEIGHT];
 
+const VIDEO_MEMORY: usize = 0xffff80001feb8000;
+
+const VIDEO_HEIGHT: usize = 25;
+const VIDEO_WIDTH: usize = 80;
+
+pub const INPUT_MAXSIZE: usize = 512;
+const BUFFER_HEIGHT: usize = 256;
+
+const EMPTY_CHAR: VideoChar = VideoChar { character: 0, color: ColorCode::DEFAULT };
+const EMPTY_ROW: VideoRow = [EMPTY_CHAR; VIDEO_WIDTH];
+
 struct Terminal {
     cur_col: usize,
     cur_row: usize,
@@ -86,11 +98,11 @@ struct Terminal {
     input_begin: usize,
     input_idx: usize,
     input_status: InputStatus,
-    input: &'static mut ArrayVec<u8, INPUT_MAXSIZE>,
-    history: &'static mut ArrayVec<u8, INPUT_MAXSIZE>,
+    input: ArrayVec<u8, INPUT_MAXSIZE>,
+    history: ArrayVec<u8, INPUT_MAXSIZE>,
 
-    buffer: RingBuffer<'static, VideoRow>,
-    video: Volatile<&'static mut VideoBuffer>,
+    buffer: RingBuffer<VideoRow, BUFFER_HEIGHT>,
+    video: VolatileRef<'static, VideoBuffer>,
 }
 
 struct TerminalWriter<'a> {
@@ -112,22 +124,8 @@ struct StatusLineWriter<'a> {
     cur: usize,
 }
 
-const VIDEO_MEMORY: usize = 0xffff80001feb8000;
-
-const VIDEO_HEIGHT: usize = 25;
-const VIDEO_WIDTH: usize = 80;
-
-pub const INPUT_MAXSIZE: usize = 512;
-const BUFFER_HEIGHT: usize = 256;
-
-const EMPTY_CHAR: VideoChar = VideoChar { character: 0, color: ColorCode::DEFAULT };
-const EMPTY_ROW: VideoRow = [EMPTY_CHAR; VIDEO_WIDTH];
-
 lazy_static! {
     static ref TERM: IrqMutex<Terminal> = IrqMutex::new(unsafe {
-        static mut BUFFER: [VideoRow; BUFFER_HEIGHT] = [EMPTY_ROW; BUFFER_HEIGHT];
-        static mut INPUT: ArrayVec<u8, INPUT_MAXSIZE> = ArrayVec::new_const();
-        static mut HISTORY: ArrayVec<u8, INPUT_MAXSIZE> = ArrayVec::new_const();
         Terminal {
             cur_col: 0,
             cur_row: 0,
@@ -137,10 +135,10 @@ lazy_static! {
             input_begin: 0,
             input_idx: 0,
             input_status: InputStatus::Waiting,
-            input: &mut INPUT,
-            history: &mut HISTORY,
-            buffer: RingBuffer::new(&mut BUFFER),
-            video: Volatile::new(&mut *(VIDEO_MEMORY as *mut VideoBuffer)),
+            input: ArrayVec::new(),
+            history: ArrayVec::new(),
+            buffer: RingBuffer::new_with(EMPTY_ROW),
+            video: VolatileRef::new(NonNull::<VideoBuffer>::new_unchecked(VIDEO_MEMORY as *mut VideoBuffer)),
         }
     });
 }
@@ -483,7 +481,7 @@ impl Terminal {
                 break;
             }
 
-            self.video_ch_mut(row, pos).write(VideoChar {
+            self.write_video_ch(row, pos, VideoChar {
                 character: ch,
                 color: ColorCode::STATUS,
             });
@@ -498,7 +496,7 @@ impl Terminal {
         let row = self.get_status_line_row(kind, line);
 
         for pos in cur..VIDEO_WIDTH {
-            self.video_ch_mut(row, pos).write(VideoChar {
+            self.write_video_ch(row, pos, VideoChar {
                 character: 0,
                 color: ColorCode::STATUS,
             });
@@ -558,11 +556,11 @@ impl Terminal {
         let back_start = VIDEO_HEIGHT - self.status_back_len;
 
         for row in 0..self.status_front_len {
-            self.video_row_mut(row).write(line);
+            self.write_video_row(row, line);
         }
 
         for row in back_start..VIDEO_HEIGHT {
-            self.video_row_mut(row).write(line);
+            self.write_video_row(row, line);
         }
     }
 
@@ -571,7 +569,7 @@ impl Terminal {
 
         for row in 0..scrlen {
             let line = *self.buffer.get(self.scr_row + row).unwrap_or(&EMPTY_ROW);
-            self.video_row_mut(self.screen_start() + row).write(line);
+            self.write_video_row(self.screen_start() + row, line);
         }
     }
 
@@ -583,12 +581,19 @@ impl Terminal {
         VIDEO_HEIGHT - self.status_front_len - self.status_back_len
     }
 
-    fn video_row_mut(&mut self, row: usize) -> Volatile<&mut VideoRow> {
-        self.video.map_mut(|x| &mut x[row])
+    fn write_video_row(&mut self, row: usize, data: VideoRow) {
+        unsafe {
+            let ptr = self.video.as_mut_ptr().map(|x| NonNull::new_unchecked(x.as_ptr() as *mut VideoRow).add(row));
+            ptr.write(data);
+        }
     }
 
-    fn video_ch_mut(&mut self, row: usize, col: usize) -> Volatile<&mut VideoChar> {
-        self.video.map_mut(|x| &mut x[row][col])
+    fn write_video_ch(&mut self, row: usize, col: usize, data: VideoChar) {
+        unsafe {
+            let ptr = self.video.as_mut_ptr().map(|x| NonNull::new_unchecked(x.as_ptr() as *mut VideoRow).add(row));
+            let ptc = ptr.map(|x| NonNull::new_unchecked(x.as_ptr() as *mut VideoChar).add(col));
+            ptc.write(data);
+        }
     }
 
     fn write_char(&mut self, color: ColorCode, ch: u8) {
@@ -605,7 +610,7 @@ impl Terminal {
                 self.buffer[self.cur_row][self.cur_col] = ch;
                 if self.cursor_visible() {
                     let sr = self.screen_start() + self.cur_row - self.scr_row;
-                    self.video_ch_mut(sr as usize, self.cur_col).write(ch);
+                    self.write_video_ch(sr as usize, self.cur_col, ch);
                 }
 
                 self.cur_col += 1;
@@ -635,7 +640,7 @@ impl Terminal {
                 self.buffer[row][col] = ch;
                 if self.row_visible(row) {
                     let sr = self.screen_start() + row - self.scr_row;
-                    self.video_ch_mut(sr as usize, col).write(ch);
+                    self.write_video_ch(sr as usize, col, ch);
                 }
 
                 let nc = col + 1;
@@ -854,17 +859,17 @@ fn panic(info: &core::panic::PanicInfo) -> ! {
             let mut s = ArrayString::<SIZE>::new();
             write!(FixedWriter::new(&mut s), "[PANIC in term-lock] {}", info).ok();
 
-            let mut video = unsafe {
-                Volatile::new(&mut *(VIDEO_MEMORY as *mut VideoBuffer))
-            };
+            let video = VIDEO_MEMORY as *mut VideoBuffer;
 
             for (idx, ch) in s.bytes().enumerate() {
                 let col = idx % VIDEO_WIDTH;
                 let row = idx / VIDEO_WIDTH;
-                video.map_mut(|x| &mut x[row][col]).write(VideoChar {
-                    character: ch,
-                    color: ColorCode::PANIC
-                });
+                unsafe {
+                    core::ptr::write_volatile(&mut (*video)[row][col], VideoChar {
+                        character: ch,
+                        color: ColorCode::PANIC
+                    });
+                }
             }
         }
 
