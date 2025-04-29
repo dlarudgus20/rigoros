@@ -1,7 +1,6 @@
 #![cfg_attr(not(test), no_std)]
 
 #![feature(abi_x86_interrupt)]
-#![feature(const_mut_refs)]
 #![deny(unsafe_op_in_unsafe_fn)]
 
 pub mod fixed_writer;
@@ -24,7 +23,7 @@ use x86_64::instructions::interrupts;
 
 use crate::interrupt_queue::{InterruptMessage, intmsg_pop};
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn kmain() -> ! {
     unsafe {
         serial::init_serial();

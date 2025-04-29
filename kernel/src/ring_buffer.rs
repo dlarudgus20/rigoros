@@ -1,21 +1,24 @@
 use core::ops::{Index, IndexMut};
 
-pub struct RingBuffer<'a, T: Copy> {
-    buffer: &'a mut [T],
+pub struct RingBuffer<T: Copy, const CAP: usize> {
+    buffer: [T; CAP],
     first: usize,
     last: usize,
-    size: usize,
     empty: bool,
 }
 
-impl<'a, T: Copy> RingBuffer<'a, T> {
-    pub fn new(buffer: &'a mut [T]) -> Self {
-        let size = buffer.len();
+impl<T: Copy + Default, const CAP: usize> RingBuffer<T, CAP> {
+    pub fn new() -> Self {
+        Self::new_with(Default::default())
+    }
+}
+
+impl<T: Copy, const CAP: usize> RingBuffer<T, CAP> {
+    pub fn new_with(initial: T) -> Self {
         Self {
-            buffer: buffer,
+            buffer: [initial; CAP],
             first: 0,
             last: 0,
-            size,
             empty: true
         }
     }
@@ -26,12 +29,12 @@ impl<'a, T: Copy> RingBuffer<'a, T> {
         } else if self.first < self.last {
             self.last - self.first
         } else {
-            self.last + self.size - self.first
+            self.last + self.buffer.len() - self.first
         }
     }
 
     pub fn capacity(&self) -> usize {
-        self.size
+        self.buffer.len()
     }
 
     pub fn get(&self, index: usize) -> Option<&T> {
@@ -46,10 +49,10 @@ impl<'a, T: Copy> RingBuffer<'a, T> {
         let p = self.first + index;
         if index >= self.len() {
             None
-        } else if p < self.size {
+        } else if p < self.buffer.len() {
             Some(p)
         } else {
-            Some(p - self.size)
+            Some(p - self.buffer.len())
         }
     }
 
@@ -70,7 +73,7 @@ impl<'a, T: Copy> RingBuffer<'a, T> {
             self.buffer[self.last] = data;
             self.last += 1;
 
-            if self.last >= self.size {
+            if self.last >= self.buffer.len() {
                 self.last = 0;
             }
 
@@ -93,13 +96,13 @@ impl<'a, T: Copy> RingBuffer<'a, T> {
             forced = true;
 
             self.first += 1;
-            if self.first >= self.size {
+            if self.first >= self.buffer.len() {
                 self.first = 0;
             }
         }
 
         self.last += 1;
-        if self.last >= self.size {
+        if self.last >= self.buffer.len() {
             self.last = 0;
         }
 
@@ -137,7 +140,7 @@ impl<'a, T: Copy> RingBuffer<'a, T> {
             let value = self.buffer[self.first];
             self.first += 1;
 
-            if self.first >= self.size {
+            if self.first >= self.buffer.len() {
                 self.first = 0;
             }
             if self.first == self.last {
@@ -155,7 +158,7 @@ impl<'a, T: Copy> RingBuffer<'a, T> {
     }
 }
 
-impl<'a, T: Copy> Index<usize> for RingBuffer<'a, T> {
+impl<T: Copy, const CAP: usize> Index<usize> for RingBuffer<T, CAP> {
     type Output = T;
 
     fn index(&self, index: usize) -> &T {
@@ -163,7 +166,7 @@ impl<'a, T: Copy> Index<usize> for RingBuffer<'a, T> {
     }
 }
 
-impl<'a, T: Copy> IndexMut<usize> for RingBuffer<'a, T> {
+impl<T: Copy, const CAP: usize> IndexMut<usize> for RingBuffer<T, CAP> {
     fn index_mut(&mut self, index: usize) -> &mut T {
         self.get_mut(index).expect("Out of bound access")
     }

@@ -27,7 +27,7 @@ pub struct Context {
     pub ss: u64,
 }
 
-extern "C" {
+unsafe extern "C" {
     pub fn switch_context(from: &mut Context, to: &Context);
 }
 
