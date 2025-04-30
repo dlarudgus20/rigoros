@@ -1,9 +1,12 @@
 [package]
 name = "slab_alloc"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 
 [lib]
 crate-type = ["lib"]
 
 [dependencies]
+
+[dev-dependencies]
+rand = "0.9.1"

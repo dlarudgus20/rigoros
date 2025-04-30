@@ -1,5 +1,59 @@
-#![no_std]
+#![cfg_attr(not(test), no_std)]
 #![deny(unsafe_op_in_unsafe_fn)]
+
+/// A `SlabAllocator` is a memory allocator designed for efficient allocation and deallocation
+/// of fixed-size objects. It uses a slab-based approach, where memory is divided into pages,
+/// and each page is further divided into fixed-size slots for objects. This allocator is
+/// particularly useful for scenarios where frequent allocations and deallocations of objects
+/// of the same size are required.
+///
+/// The memory `SlabAllocator` uses is allocated by the struct implmenting `PageAllocator` trait,
+/// which is responsible for managing the allocation and deallocation of memory pages.
+/// It must allocates memory sized in `PAGE_SIZE` bytes, and aligned in `PAGE_SIZE` bytes.
+///
+/// Each page managed by the `SlabAllocator` consists of the following components:
+///
+/// 1. **Page Header**:
+///    - Located at the beginning of the page.
+///    - Contains metadata about the page, such as:
+///      - `next`: Pointer to the next page in the linked list of pages.
+///      - `free`: Offset to the first free object in the free object list. The free objects are managed as a singly linked list.
+///      - `count`: Number of currently allocated objects in the page.
+///
+/// 2. **Object Slots**:
+///    - Rest of the page are filled with an array of object slots.
+///    - Each object slot consists of:
+///      - **Object Header**:
+///        - Contains metadata for the object, such as:
+///          - `magic`: Filled with `OBJECT_MAGIC` when the slot is allocated.
+///          - `next`: Offset to the next free object in the free object list of the page. 0 when this slot is used.
+///      - **Redzone (before payload)**:
+///        - Two redzones (before and after the payload) are used to detect memory corruption.
+///        - Filled with a predefined pattern (`REDZONE_FILL`) to ensure integrity.
+///      - **Padding (before payload)**:
+///        - Padding added to ensure proper alignment of the payload.
+///      - **Payload**:
+///        - The actual memory region allocated for the object.
+///        - Its first byte is filled with a predefined pattern (`UNUSED_FILL`) when the slot is not used.
+///      - **Redzone (after payload)**
+///      - **Padding (tail)**:
+///        - Padding added to ensure proper alignment of the next object header.
+///
+/// # Allocation & Deallocation Behavior
+///
+/// - When an object is allocated:
+///   - The allocator checks if there are free objects available in the current page.
+///   - If no free objects are available, a new page is allocated from the `PageAllocator`.
+///   - The first free object is removed from the free list, and its metadata is updated to
+///     mark it as allocated.
+///   - A pointer to the payload region of the object is returned.
+///
+/// - When an object is deallocated:
+///   - The allocator verifies the integrity of the object using the magic number and redzones.
+///   - The object is marked as free and added back to the free list of its page.
+///   - If the page becomes completely free, it may be deallocated and returned to the
+///     `PageAllocator`.
+///
 
 use core::mem::{size_of, align_of};
 use core::ptr::{NonNull, null_mut, write_bytes};
@@ -13,16 +67,18 @@ const REDZONE_FILL: u8 = 0xf1;
 const UNUSED_FILL: u8 = 0xe2;
 
 pub unsafe trait PageAllocator {
+    // return value must be aligned in PAGE_SIZE
     fn allocate(&mut self) -> Option<NonNull<[u8; PAGE_SIZE]>>;
+    // Safety: ptr is an address of an allocated page
     unsafe fn deallocate(&mut self, ptr: NonNull<[u8; PAGE_SIZE]>);
 }
 
 pub struct SlabAllocator<PA: PageAllocator> {
     payload_size: u16,
     payload_align: u16,
-    front_size: u16,
-    object_size: u16,
-    free: *mut ObjectHeader,
+    front_size: u16,                // size between slot object's start and payload's start.
+    object_size: u16,               // size of the total slot object.
+    avail_page: *mut PageHeader,    // pointer to the first available page in the available page list.
     page_allocator: PA,
 }
 
@@ -66,61 +122,54 @@ impl<PA: PageAllocator> SlabAllocator<PA> {
             payload_align,
             front_size,
             object_size,
-            free: null_mut(),
+            avail_page: null_mut(),
             page_allocator,
         }
     }
 
     pub fn alloc(&mut self) -> Option<NonNull<u8>> {
-        if self.free.is_null() {
-            self.free = self.alloc_page()?;
+        if self.avail_page.is_null() {
+            self.avail_page = self.alloc_page()?;
         }
 
         Some(unsafe { self.alloc_from_free() })
     }
 
-    // Safety: self.free is not null
+    // Safety: self.avail_page is not null
     unsafe fn alloc_from_free(&mut self) -> NonNull<u8> {
-        let object = self.free;
-        let addr = object as usize;
+        let page = self.avail_page;
         unsafe {
+            assert_ne!((*page).free, 0, "slab is poisoned");
+
+            let addr = page as usize + (*page).free as usize;
+            let object = addr as *mut ObjectHeader;
+
             assert_eq!((*object).magic, 0, "slab is poisoned");
             assert!(self.check_redzone(addr), "slab is poisoned");
             assert!(self.check_unused(addr), "dangling pointer exists or slab is poisoned");
 
             (*object).magic = OBJECT_MAGIC;
-
-            let page = page_from_object(object);
             (*page).count += 1;
 
             if (*object).next != 0 {
-                let next_addr = (page as usize) + (*object).next as usize;
-                self.free = next_addr as *mut ObjectHeader;
                 (*page).free = (*object).next;
                 (*object).next = 0;
             }
-            else if !(*page).next.is_null() {
-                let np = (*page).next;
-                let next_addr = (np as usize) + (*np).free as usize;
-                self.free = next_addr as *mut ObjectHeader;
+            else {
+                self.avail_page = (*page).next;
                 (*page).free = 0;
                 (*page).next = null_mut();
-            }
-            else {
-                self.free = null_mut();
-                (*page).free = 0;
             }
 
             NonNull::new_unchecked((addr + self.front_size as usize) as *mut u8)
         }
     }
 
-    fn alloc_page(&mut self) -> Option<*mut ObjectHeader> {
+    fn alloc_page(&mut self) -> Option<*mut PageHeader> {
         let addr = self.page_allocator.allocate()?.as_ptr() as usize;
         let header = addr as *mut PageHeader;
 
         let mut offset = self.page_offset();
-        let first = (addr + offset as usize) as *mut ObjectHeader;
 
         let header_size = size_of::<ObjectHeader>();
         let right_offset = (self.front_size + self.payload_size) as usize;
@@ -139,7 +188,7 @@ impl<PA: PageAllocator> SlabAllocator<PA> {
                 write_bytes((obj_addr + right_offset) as *mut u8, REDZONE_FILL, REDZONE_SIZE as usize);
 
                 offset += self.object_size;
-                if offset < PAGE_SIZE as u16 {
+                if offset + self.object_size <= PAGE_SIZE as u16 {
                     (*object).next = offset;
                 }
                 else {
@@ -149,7 +198,7 @@ impl<PA: PageAllocator> SlabAllocator<PA> {
             }
         }
 
-        Some(first)
+        Some(header)
     }
 
     fn page_offset(&self) -> u16 {
@@ -160,48 +209,45 @@ impl<PA: PageAllocator> SlabAllocator<PA> {
     pub unsafe fn dealloc(&mut self, ptr: NonNull<u8>) {
         let payload_addr = ptr.as_ptr() as usize;
         let addr = payload_addr - self.front_size as usize;
-        let header = addr as *mut ObjectHeader;
+        let ptr_header = addr as *mut ObjectHeader;
 
         unsafe {
-            assert!((*header).magic == OBJECT_MAGIC && (*header).next == 0, "invalid dealloc() or slab is poisoned");
+            let header = &mut *ptr_header;
+            assert!(header.magic == OBJECT_MAGIC && header.next == 0, "invalid dealloc() or slab is poisoned");
             assert!(self.check_redzone(addr), "invalid dealloc() or slab is poisoned");
 
             *(payload_addr as *mut u8) = UNUSED_FILL;
 
-            let page = page_from_object(header);
+            let page = page_from_object(ptr_header);
             (*page).count -= 1;
 
-            (*header).magic = 0;
-            (*header).next = (*page).free;
+            header.magic = 0;
+            if (*page).free != 0 {
+                header.next = (*page).free;
+            }
             (*page).free = (addr - page as usize) as u16;
 
-            if self.free.is_null() || page_from_object(self.free) == page {
-                self.free = header;
-
-                if (*page).count == 0 {
-                    self.dealloc_page(page);
+            /*if (*page).count == 0 {
+                if self.avail_page == page {
+                    self.avail_page = (*page).next;
                 }
+                else {
+                    (*(*page).prev).next = (*page).next;
+                }
+                self.page_allocator.deallocate(NonNull::new_unchecked(page as *mut [u8; PAGE_SIZE]));
             }
-            else {
-                let pp = page_from_object(self.free);
-                (*page).next = (*pp).next;
-                (*pp).next = page;
-            }
-        }
-    }
-
-    // Safety: page is valid
-    unsafe fn dealloc_page(&mut self, page: *mut PageHeader) {
-        unsafe {
-            if (*page).next.is_null() {
-                self.free = null_mut();
-            }
-            else {
-                let np = (*page).next;
-                let next_addr = (np as usize) + (*np).free as usize;
-                self.free = next_addr as *mut ObjectHeader;
-            }
-            self.page_allocator.deallocate(NonNull::new_unchecked(page as *mut [u8; PAGE_SIZE]));
+            else if self.avail_page != page {
+                let p = (*page).prev;
+                let n = (*page).next;
+                if !p.is_null() { (*p).next = n; }
+                if !n.is_null() { (*n).prev = p; }
+                (*page).prev = null_mut();
+                (*page).next = self.avail_page;
+                if self.avail_page != null_mut() {
+                    (*self.avail_page).prev = page;
+                }
+                self.avail_page = page;
+            }*/
         }
     }
 
@@ -231,3 +277,6 @@ fn align_ceil(x: u16, align: u16) -> u16 {
     let mask = align - 1;
     (x + mask) & !mask
 }
+
+#[cfg(test)]
+mod test;
