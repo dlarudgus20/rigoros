@@ -1,6 +1,7 @@
 use super::*;
 use std::vec::Vec;
 use std::alloc::{alloc_zeroed, dealloc, Layout};
+use std::panic::{catch_unwind, AssertUnwindSafe};
 use rand::rngs::SmallRng;
 use rand::{Rng, SeedableRng};
 use rand::seq::SliceRandom;
@@ -9,6 +10,8 @@ struct MockPageAllocator {
     layout: Layout,
     pages: Vec<NonNull<[u8; PAGE_SIZE]>>,
     deallocated: Vec<NonNull<[u8; PAGE_SIZE]>>,
+    on_after_alloc: Option<fn (&mut MockPageAllocator) -> ()>,
+    on_before_dealloc: Option<fn (&mut MockPageAllocator) -> ()>,
 }
 
 impl MockPageAllocator {
@@ -17,6 +20,8 @@ impl MockPageAllocator {
             layout: Layout::from_size_align(PAGE_SIZE, PAGE_SIZE).unwrap(),
             pages: Vec::new(),
             deallocated: Vec::new(),
+            on_after_alloc: None,
+            on_before_dealloc: None,
         }
     }
 
@@ -31,10 +36,12 @@ unsafe impl PageAllocator for MockPageAllocator {
         let page = unsafe { alloc_zeroed(self.layout) as *mut [u8; PAGE_SIZE] };
         let ptr = NonNull::new(page).unwrap();
         self.pages.push(ptr);
+        self.on_after_alloc.map(|f| f(self));
         Some(ptr)
     }
 
     unsafe fn deallocate(&mut self, ptr: NonNull<[u8; PAGE_SIZE]>) {
+        self.on_before_dealloc.map(|f| f(self));
         let index = self.pages.iter().position(|&p| p == ptr).unwrap();
         //unsafe { dealloc(ptr.as_ptr() as *mut u8, self.layout); }
         self.pages.remove(index);
@@ -73,7 +80,7 @@ fn test_slab_allocator_creation() {
 }
 
 #[test]
-fn test_alloc_dealloc_once() {
+fn test_slab_alloc_dealloc_once() {
     let page_allocator = MockPageAllocator::new();
     #[repr(align(8))]
     struct Chunk { _data: [u8; 64] }
@@ -90,7 +97,7 @@ fn test_alloc_dealloc_once() {
 }
 
 #[test]
-fn test_alignment_8() {
+fn test_slab_alignment_8() {
     let page_allocator = MockPageAllocator::new();
     #[repr(align(8))]
     struct Chunk8 { _data: [u8; 24] }
@@ -102,7 +109,7 @@ fn test_alignment_8() {
 }
 
 #[test]
-fn test_alignment_16() {
+fn test_slab_alignment_16() {
     let page_allocator = MockPageAllocator::new();
     #[repr(align(16))]
     struct Chunk16 { _data: [u8; 32] }
@@ -114,7 +121,7 @@ fn test_alignment_16() {
 }
 
 #[test]
-fn test_alignment_64() {
+fn test_slab_alignment_64() {
     let page_allocator = MockPageAllocator::new();
     #[repr(align(64))]
     struct Chunk64 { _data: [u8; 128] }
@@ -126,7 +133,7 @@ fn test_alignment_64() {
 }
 
 #[test]
-fn test_alignment_multiple_chunks() {
+fn test_slab_alignment_multiple_chunks() {
     let page_allocator = MockPageAllocator::new();
     #[repr(align(32))]
     struct Chunk32 { _data: [u8; 64] }
@@ -144,7 +151,7 @@ fn test_alignment_multiple_chunks() {
 }
 
 #[test]
-fn test_alignment_random_sizes() {
+fn test_slab_alignment_random_sizes() {
     let page_allocator = MockPageAllocator::new();
     #[repr(align(128))]
     struct Chunk128 { _data: [u8; 200] }
@@ -162,7 +169,7 @@ fn test_alignment_random_sizes() {
 }
 /*
 #[test]
-fn test_alloc_all_alignment() {
+fn test_slab_alloc_all_alignment() {
     let page_allocator = MockPageAllocator::new();
     #[repr(align(32))]
     struct Chunk {
@@ -182,7 +189,7 @@ fn test_alloc_all_alignment() {
     }
 }*/
 #[test]
-fn test_exhaustion_and_reuse() {
+fn test_slab_exhaustion_and_reuse() {
     let page_allocator = MockPageAllocator::new();
     #[repr(align(16))]
     struct Chunk { _data: [u8; 32] }
@@ -216,7 +223,7 @@ fn test_exhaustion_and_reuse() {
 }
 
 #[test]
-fn test_random_alloc_dealloc_pattern() {
+fn test_slab_random_alloc_dealloc_pattern() {
     let page_allocator = MockPageAllocator::new();
     #[repr(align(8))]
     struct Chunk { _data: [u8; 40] }
@@ -245,7 +252,7 @@ fn test_random_alloc_dealloc_pattern() {
 }
 
 #[test]
-fn test_null_alloc_returns_none() {
+fn test_slab_null_alloc_returns_none() {
     struct FailingAllocator;
     unsafe impl PageAllocator for FailingAllocator {
         fn allocate(&mut self) -> Option<NonNull<[u8; PAGE_SIZE]>> {
@@ -265,7 +272,7 @@ fn test_null_alloc_returns_none() {
 }
 
 #[test]
-fn test_large_chunk() {
+fn test_slab_large_chunk() {
     let page_allocator = MockPageAllocator::new();
     #[repr(align(8))]
     struct LargeChunk { _data: [u8; PAGE_SIZE / 2] }
@@ -288,7 +295,7 @@ fn test_large_chunk() {
 }
 
 #[test]
-fn test_interleaved_alloc_dealloc_multiple_types() {
+fn test_slab_interleaved_alloc_dealloc_multiple_types() {
     let page_allocator_a = MockPageAllocator::new();
     let page_allocator_b = MockPageAllocator::new();
 
@@ -322,7 +329,7 @@ fn test_interleaved_alloc_dealloc_multiple_types() {
 }
 
 #[test]
-fn test_stress_many_pages() {
+fn test_slab_stress_many_pages() {
     let page_allocator = MockPageAllocator::new();
     #[repr(align(8))]
     struct Chunk { _data: [u8; 32] }
@@ -341,7 +348,7 @@ fn test_stress_many_pages() {
 }
 
 #[test]
-fn test_repeated_alloc_dealloc_cycles() {
+fn test_slab_repeated_alloc_dealloc_cycles() {
     let page_allocator = MockPageAllocator::new();
     #[repr(align(16))]
     struct Chunk { _data: [u8; 48] }
@@ -361,7 +368,7 @@ fn test_repeated_alloc_dealloc_cycles() {
 }
 
 #[test]
-fn test_double_free_panics() {
+fn test_slab_double_free_panics() {
     let page_allocator = MockPageAllocator::new();
     #[repr(align(8))]
     struct Chunk { _data: [u8; 32] }
@@ -370,7 +377,6 @@ fn test_double_free_panics() {
     let ptr = slab.alloc().unwrap();
     unsafe { slab.dealloc(ptr); }
     // Double free should panic or cause debug assertion failure
-    use std::panic::{catch_unwind, AssertUnwindSafe};
     let result = catch_unwind(AssertUnwindSafe(|| {
         unsafe { slab.dealloc(ptr); }
     }));
@@ -378,7 +384,7 @@ fn test_double_free_panics() {
 }
 
 #[test]
-fn test_alloc_dealloc_pattern_with_gaps() {
+fn test_slab_alloc_dealloc_pattern_with_gaps() {
     let page_allocator = MockPageAllocator::new();
     #[repr(align(8))]
     struct Chunk { _data: [u8; 24] }
@@ -409,7 +415,7 @@ fn test_alloc_dealloc_pattern_with_gaps() {
 }
 
 #[test]
-fn test_fragmentation_and_reuse() {
+fn test_slab_fragmentation_and_reuse() {
     let page_allocator = MockPageAllocator::new();
     #[repr(align(8))]
     struct Chunk { _data: [u8; 40] }
@@ -438,7 +444,7 @@ fn test_fragmentation_and_reuse() {
 }
 
 #[test]
-fn test_old_multiple_pages_allocation_and_deallocation() {
+fn test_slab_old_multiple_pages_allocation_and_deallocation() {
     let page_allocator = MockPageAllocator::new();
     #[repr(align(8))]
     struct Chunk { _data: [u8; 64] }
@@ -472,7 +478,7 @@ fn test_old_multiple_pages_allocation_and_deallocation() {
 }
 
 #[test]
-fn test_old_random_allocation_and_deallocation_sequencial() {
+fn test_slab_old_random_allocation_and_deallocation_sequencial() {
     let page_allocator = MockPageAllocator::new();
     #[repr(align(8))]
     struct Chunk { _data: [u8; 64] }
@@ -489,7 +495,6 @@ fn test_old_random_allocation_and_deallocation_sequencial() {
     for _ in 0..(PAGE_SIZE / 64 * 4) {
         let ptr = slab_allocator.alloc().unwrap();
         allocated_ptrs.push(ptr);
-        println!("Allocated: {:?}", ptr);
     }
 
     // Shuffle the allocated pointers to randomize deallocation order
@@ -508,7 +513,7 @@ fn test_old_random_allocation_and_deallocation_sequencial() {
 }
 
 #[test]
-fn test_old_random_allocation_and_deallocation_interleaved() {
+fn test_slab_old_random_allocation_and_deallocation_interleaved() {
     let page_allocator = MockPageAllocator::new();
     #[repr(align(8))]
     struct Chunk { _data: [u8; 64] }
@@ -551,7 +556,7 @@ fn test_old_random_allocation_and_deallocation_interleaved() {
 }
 
 #[test]
-fn test_old_large_allocation_and_deallocation() {
+fn test_slab_old_large_allocation_and_deallocation() {
     let page_allocator = MockPageAllocator::new();
     #[repr(align(16))]
     struct Chunk { _data: [u8; 128] }
@@ -585,7 +590,7 @@ fn test_old_large_allocation_and_deallocation() {
 }
 
 #[test]
-fn test_old_interleaved_allocation_and_deallocation() {
+fn test_slab_old_interleaved_allocation_and_deallocation() {
     let page_allocator = MockPageAllocator::new();
     #[repr(align(8))]
     struct Chunk { _data: [u8; 64] }
@@ -619,7 +624,7 @@ fn test_old_interleaved_allocation_and_deallocation() {
 }
 
 #[test]
-fn test_old_fragmentation_handling() {
+fn test_slab_old_fragmentation_handling() {
     let page_allocator = MockPageAllocator::new();
     #[repr(align(16))]
     struct Chunk { _data: [u8; 128] }
@@ -652,7 +657,7 @@ fn test_old_fragmentation_handling() {
 }
 
 #[test]
-fn test_old_stress_allocation_and_deallocation() {
+fn test_slab_old_stress_allocation_and_deallocation() {
     let page_allocator = MockPageAllocator::new();
     #[repr(align(32))]
     struct Chunk { _data: [u8; 256] }
@@ -683,4 +688,267 @@ fn test_old_stress_allocation_and_deallocation() {
     // Ensure allocator can still allocate after stress test
     let ptr = slab_allocator.alloc();
     assert!(ptr.is_some());
+}
+
+// These tests are intended to fail in compilation.
+/*
+#[test]
+fn test_slab_object_too_large_for_page() {
+    let page_allocator = MockPageAllocator::new();
+    const MINIMAL_METADATA_SIZE: usize = 60;
+    #[repr(align(1))]
+    struct HugeChunk { _data: [u8; PAGE_SIZE - MINIMAL_METADATA_SIZE + 1] }
+    SlabAllocator::<HugeChunk, _>::new(page_allocator);
+}
+#[test]
+fn test_slab_object_too_large_for_page_by_align() {
+    let page_allocator = MockPageAllocator::new();
+    #[repr(align(128))]
+    struct HugeChunk { _data: [u8; PAGE_SIZE - 128 * 3 + 1] }
+    SlabAllocator::<HugeChunk, _>::new(page_allocator);
+}
+*/
+
+#[test]
+fn test_slab_redzone_detection_on_overflow() {
+    let page_allocator = MockPageAllocator::new();
+    #[repr(align(8))]
+    struct Chunk { _data: [u8; 32] }
+    let mut slab: SlabAllocator<Chunk, _> = SlabAllocator::new(page_allocator);
+
+    let ptr = slab.alloc().unwrap();
+    let chunk_ptr = ptr.as_ptr() as *mut u8;
+
+    // Write past the end of the chunk to trigger redzone detection.
+    // The redzone is assumed to be immediately after the chunk.
+    let result = catch_unwind(AssertUnwindSafe(|| unsafe {
+        // Write 1 byte past the end of the chunk
+        *chunk_ptr.add(std::mem::size_of::<Chunk>()) = 0xAA;
+        slab.dealloc(ptr);
+    }));
+    assert!(result.is_err(), "Redzone overflow should panic or fail");
+}
+
+#[test]
+fn test_slab_redzone_detection_on_underflow() {
+    let page_allocator = MockPageAllocator::new();
+    #[repr(align(8))]
+    struct Chunk { _data: [u8; 32] }
+    let mut slab: SlabAllocator<Chunk, _> = SlabAllocator::new(page_allocator);
+
+    let ptr = slab.alloc().unwrap();
+    let chunk_ptr = ptr.as_ptr() as *mut u8;
+
+    let result = catch_unwind(AssertUnwindSafe(|| unsafe {
+        // Write 1 byte before the start of the chunk
+        *chunk_ptr.offset(-1) = 0xBB;
+        slab.dealloc(ptr);
+    }));
+    assert!(result.is_err(), "Redzone underflow should panic or fail");
+}
+
+#[test]
+fn test_slab_redzone_integrity_on_normal_use() {
+    // This test ensures that normal allocation and deallocation does not trigger redzone errors.
+
+    let page_allocator = MockPageAllocator::new();
+    #[repr(align(8))]
+    struct Chunk { _data: [u8; 32] }
+    let mut slab: SlabAllocator<Chunk, _> = SlabAllocator::new(page_allocator);
+
+    let ptr = slab.alloc().unwrap();
+    let chunk_ptr = ptr.as_ptr() as *mut u8;
+
+    // Write within the chunk boundaries
+    unsafe {
+        for i in 0..std::mem::size_of::<Chunk>() {
+            *chunk_ptr.add(i) = i as u8;
+        }
+        slab.dealloc(ptr);
+    }
+    // If no panic occurs, redzone is intact for normal use
+}
+
+#[test]
+fn test_slab_alloc_dealloc_full_page_cycle() {
+    let page_allocator = MockPageAllocator::new();
+    #[repr(align(8))]
+    struct Chunk { _data: [u8; 32] }
+    let mut slab: SlabAllocator<Chunk, _> = SlabAllocator::new(page_allocator);
+
+    let chunks_per_page = (PAGE_SIZE - SlotPage::<Chunk>::object_offset()) / SlotObject::<Chunk>::size_of();
+    let mut ptrs = Vec::with_capacity(chunks_per_page);
+
+    slab.page_allocator.on_after_alloc = Some(|pa| {
+        assert!(pa.pages.len() == 1, "Should allocate exactly one page");
+    });
+
+    // Fill a page
+    for _ in 0..chunks_per_page {
+        ptrs.push(slab.alloc().unwrap());
+    }
+
+    // Deallocate all
+    for ptr in ptrs {
+        unsafe { slab.dealloc(ptr); }
+    }
+
+    // Allocate again
+    for _ in 0..chunks_per_page {
+        assert!(slab.alloc().is_some());
+    }
+}
+
+#[test]
+fn test_slab_alloc_dealloc_interleaved_pages() {
+    let page_allocator = MockPageAllocator::new();
+    #[repr(align(8))]
+    struct Chunk { _data: [u8; 64] }
+    let mut slab: SlabAllocator<Chunk, _> = SlabAllocator::new(page_allocator);
+
+    let chunks_per_page = (PAGE_SIZE - SlotPage::<Chunk>::object_offset()) / SlotObject::<Chunk>::size_of();
+    let mut ptrs = Vec::new();
+
+    println!("Chunks per page: {}", chunks_per_page);
+
+    slab.page_allocator.on_after_alloc = Some(|pa| {
+        assert!(pa.pages.len() <= 2, "Should allocate two pages at most");
+        println!("Allocated page: #{}", pa.pages.len());
+    });
+
+    slab.page_allocator.on_before_dealloc = Some(|_| {
+        panic!("Should not deallocate any pages during this test");
+    });
+
+    // Allocate enough for two pages
+    for _ in 0..(chunks_per_page * 2) {
+        ptrs.push(slab.alloc().unwrap());
+    }
+
+    // Deallocate every other chunk
+    for i in (0..ptrs.len()).step_by(2) {
+        unsafe { slab.dealloc(ptrs[i]); }
+    }
+
+    // Allocate again, should fill freed slots before allocating new pages
+    for i in 0..chunks_per_page {
+        println!("Reallocating chunk #{}", i * 2);
+        assert!(slab.alloc().is_some());
+    }
+}
+
+#[test]
+fn test_slab_alloc_dealloc_after_drop() {
+    let page_allocator = MockPageAllocator::new();
+    #[repr(align(8))]
+    struct Chunk { _data: [u8; 32] }
+
+    let _ = {
+        let mut slab: SlabAllocator<Chunk, _> = SlabAllocator::new(page_allocator);
+        let ptr = slab.alloc().unwrap();
+        unsafe { slab.dealloc(ptr); }
+        ptr
+    };
+    // After drop, memory should be deallocated, but we can't access ptr anymore.
+    // This test just ensures no panic or UB occurs on drop.
+}
+
+#[test]
+fn test_slab_alloc_dealloc_many_types() {
+    let page_allocator = MockPageAllocator::new();
+    #[repr(align(8))]
+    struct ChunkA { _data: [u8; 16] }
+    #[repr(align(16))]
+    struct ChunkB { _data: [u8; 32] }
+    #[repr(align(32))]
+    struct ChunkC { _data: [u8; 64] }
+
+    let mut slab_a: SlabAllocator<ChunkA, _> = SlabAllocator::new(page_allocator);
+    let mut slab_b: SlabAllocator<ChunkB, _> = SlabAllocator::new(MockPageAllocator::new());
+    let mut slab_c: SlabAllocator<ChunkC, _> = SlabAllocator::new(MockPageAllocator::new());
+
+    let ptr_a = slab_a.alloc().unwrap();
+    let ptr_b = slab_b.alloc().unwrap();
+    let ptr_c = slab_c.alloc().unwrap();
+
+    unsafe {
+        slab_a.dealloc(ptr_a);
+        slab_b.dealloc(ptr_b);
+        slab_c.dealloc(ptr_c);
+    }
+}
+
+#[test]
+fn test_slab_alloc_dealloc_zero_sized_type() {
+    let page_allocator = MockPageAllocator::new();
+    #[repr(align(8))]
+    struct Chunk;
+    let mut slab: SlabAllocator<Chunk, _> = SlabAllocator::new(page_allocator);
+
+    // Zero-sized types: alloc should still return a unique pointer
+    let ptr1 = slab.alloc().unwrap();
+    let ptr2 = slab.alloc().unwrap();
+    assert_ne!(ptr1, ptr2);
+
+    unsafe {
+        slab.dealloc(ptr1);
+        slab.dealloc(ptr2);
+    }
+}
+
+#[test]
+fn test_slab_alloc_dealloc_with_unusual_alignment() {
+    let page_allocator = MockPageAllocator::new();
+    #[repr(align(256))]
+    struct Chunk { _data: [u8; 128] }
+    let mut slab: SlabAllocator<Chunk, _> = SlabAllocator::new(page_allocator);
+
+    let ptr = slab.alloc().unwrap();
+    assert_eq!((ptr.as_ptr() as usize) % 256, 0);
+    unsafe { slab.dealloc(ptr); }
+}
+
+#[test]
+fn test_slab_alloc_dealloc_with_minimum_size() {
+    let page_allocator = MockPageAllocator::new();
+    #[repr(align(1))]
+    struct Chunk { _data: [u8; 1] }
+    let mut slab: SlabAllocator<Chunk, _> = SlabAllocator::new(page_allocator);
+
+    let ptr = slab.alloc().unwrap();
+    unsafe { slab.dealloc(ptr); }
+}
+
+#[test]
+fn test_slab_alloc_dealloc_with_large_alignment() {
+    let page_allocator = MockPageAllocator::new();
+    #[repr(align(1024))]
+    struct Chunk { _data: [u8; 32] }
+    let mut slab: SlabAllocator<Chunk, _> = SlabAllocator::new(page_allocator);
+
+    let ptr = slab.alloc().unwrap();
+    assert_eq!((ptr.as_ptr() as usize) % 1024, 0);
+    unsafe { slab.dealloc(ptr); }
+}
+
+#[test]
+fn test_slab_alloc_dealloc_with_multiple_allocators() {
+    let mut allocators = Vec::new();
+    for _ in 0..4 {
+        allocators.push(MockPageAllocator::new());
+    }
+    #[repr(align(8))]
+    struct Chunk { _data: [u8; 32] }
+    let mut slabs: Vec<SlabAllocator<Chunk, _>> = allocators
+        .into_iter()
+        .map(SlabAllocator::new)
+        .collect();
+
+    let mut ptrs = Vec::new();
+    for slab in &mut slabs {
+        ptrs.push(slab.alloc().unwrap());
+    }
+    for (slab, ptr) in slabs.iter_mut().zip(ptrs) {
+        unsafe { slab.dealloc(ptr); }
+    }
 }

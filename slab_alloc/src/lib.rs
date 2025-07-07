@@ -27,6 +27,8 @@ pub struct SlabAllocator<T, PA: PageAllocator> {
     _phantom: PhantomData<T>,
 }
 
+unsafe impl<T, PA: PageAllocator> Send for SlabAllocator<T, PA> {}
+
 struct PageList {
     head: *mut PageLink,
     tail: *mut PageLink,
@@ -50,7 +52,6 @@ struct SlotPage<T> {
 struct SlotObject<T> {
     magic: u16,
     next: u16,
-    redzone1: [u8; REDZONE_SIZE as usize],
     _phantom: PhantomData<T>,
 }
 
@@ -65,15 +66,23 @@ impl<T> SlotObject<T> {
         let b = align_of::<T>();
         if a > b { a } else { b }
     }
+    const fn redzone1_offset() -> usize {
+        size_of::<SlotObject<T>>()
+    }
+    const fn redzone1_size() -> usize {
+        Self::payload_offset() - Self::redzone1_offset()
+    }
     const fn payload_offset() -> usize {
-        align_ceil(size_of::<SlotObject<T>>(), align_of::<T>())
+        align_ceil(Self::redzone1_offset() + REDZONE_SIZE as usize, align_of::<T>())
     }
     const fn redzone2_offset() -> usize {
         Self::payload_offset() + size_of::<T>()
     }
+    const fn redzone2_size() -> usize {
+        Self::size_of() - Self::redzone2_offset()
+    }
     const fn size_of() -> usize {
-        let s = Self::redzone2_offset() + REDZONE_SIZE as usize;
-        align_ceil(s, Self::align_of())
+        align_ceil(Self::redzone2_offset() + REDZONE_SIZE as usize, Self::align_of())
     }
 
     fn init(&mut self) {
@@ -81,19 +90,22 @@ impl<T> SlotObject<T> {
         self.magic = EMPTY_MAGIC;
         self.next = 0;
         unsafe {
-            write_bytes(self.redzone1.as_mut_ptr(), REDZONE_FILL, REDZONE_SIZE as usize);
+            write_bytes(raw.add(Self::redzone1_offset()), REDZONE_FILL, Self::redzone1_size());
             write_bytes(raw.add(Self::payload_offset()), UNUSED_FILL, size_of::<T>());
-            write_bytes(raw.add(Self::redzone2_offset()), REDZONE_FILL, REDZONE_SIZE as usize);
+            write_bytes(raw.add(Self::redzone2_offset()), REDZONE_FILL, Self::redzone2_size());
         }
     }
 
     fn check_redzone(&self) -> bool {
         let raw = self as *const Self as *const u8;
+        let redzone1 = unsafe {
+            from_raw_parts(raw.add(Self::redzone1_offset()), Self::redzone1_size())
+        };
         let redzone2 = unsafe {
-            from_raw_parts(raw.add(Self::redzone2_offset()), REDZONE_SIZE as usize)
+            from_raw_parts(raw.add(Self::redzone2_offset()), Self::redzone2_size())
         };
 
-        self.redzone1.iter().all(|&b| b == REDZONE_FILL) &&
+        redzone1.iter().all(|&b| b == REDZONE_FILL) &&
             redzone2.iter().all(|&b| b == REDZONE_FILL)
     }
 
@@ -120,7 +132,7 @@ impl<T> SlotObject<T> {
 
     fn on_alloc(&mut self) {
         assert!(self.magic == EMPTY_MAGIC && self.next == 0, "slab is poisoned");
-        assert!(self.check_redzone(), "slab is poisoned");
+        assert!(self.check_redzone(), "redzone is corrupted");
         assert!(self.check_unused(), "slab is poisoned");
         (*self).magic = OBJECT_MAGIC;
         (*self).write_unused(0);
@@ -128,7 +140,7 @@ impl<T> SlotObject<T> {
 
     fn on_dealloc(&mut self) {
         assert!(self.magic == OBJECT_MAGIC && self.next == 0, "try to deallocate an object that is not allocated");
-        assert!(self.check_redzone(), "slab is poisoned");
+        assert!(self.check_redzone(), "redzone is corrupted");
         (*self).magic = EMPTY_MAGIC;
         (*self).write_unused(UNUSED_FILL);
     }
@@ -170,10 +182,14 @@ impl PageList {
         if !self.tail.is_null() {
             unsafe { (*self.tail).next = link; }
         }
+        else if self.head.is_null() {
+            self.head = link;
+        }
         self.tail = link;
     }
 
-    fn remove(&mut self, link: &mut PageLink) {
+    // Safety: `link` must be a valid link in the list
+    unsafe fn remove(&mut self, link: &mut PageLink) {
         if link.prev.is_null() {
             self.head = link.next;
         } else {
@@ -192,11 +208,17 @@ impl PageList {
 }
 
 impl<T> SlotPage<T> {
+    const SIZE_ASSERT: () = assert!(Self::object_offset() + SlotObject::<T>::size_of() <= PAGE_SIZE, "object size is too big for a page");
+
+    const fn object_offset() -> usize {
+        align_ceil(size_of::<SlotPage<T>>(), SlotObject::<T>::align_of())
+    }
+
     // Safety: `addr` must be aligned to PAGE_SIZE and point to a valid memory region sized of PAGE_SIZE
     unsafe fn init(addr: usize) -> *mut SlotPage<T> {
         let header = addr as *mut SlotPage<T>;
 
-        let mut offset = align_ceil(size_of::<SlotPage<T>>(), SlotObject::<T>::align_of());
+        let mut offset = Self::object_offset();
 
         unsafe {
             core::ptr::write(header, SlotPage {
@@ -261,6 +283,7 @@ impl<T> SlotPage<T> {
 
 impl<T, PA: PageAllocator> SlabAllocator<T, PA> {
     pub fn new(page_allocator: PA) -> Self {
+        let _ = SlotPage::<T>::SIZE_ASSERT; // Ensure that the object fits in a page
         Self {
             partial_list: PageList::new(),
             page_allocator,
@@ -277,7 +300,7 @@ impl<T, PA: PageAllocator> SlabAllocator<T, PA> {
         let (obj, full) = page.pop_front_object();
 
         if full {
-            self.partial_list.remove(&mut page.link);
+            unsafe { self.partial_list.remove(&mut page.link); }
         }
 
         unsafe {
@@ -323,4 +346,7 @@ impl<T, PA: PageAllocator> SlabAllocator<T, PA> {
 }
 
 #[cfg(test)]
-mod test;
+mod test_slab;
+
+#[cfg(test)]
+mod test_pagelist;
