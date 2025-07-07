@@ -19,6 +19,9 @@ impl MockPageAllocator {
             deallocated: Vec::new(),
         }
     }
+    fn is_vaild(&self, ptr: *mut u8) -> bool {
+        self.pages.iter().any(|&p| p.as_ptr() as *mut u8 == ptr)
+    }
 }
 
 unsafe impl PageAllocator for MockPageAllocator {
@@ -40,7 +43,7 @@ unsafe impl PageAllocator for MockPageAllocator {
             }
         }
         self.deallocated.push(ptr);
-        unsafe { core::ptr::write_bytes(ptr.as_ptr() as *mut u8, 0xcc, PAGE_SIZE); }
+        unsafe { core::ptr::write_bytes(ptr.as_ptr() as *mut u8, 0xdd, PAGE_SIZE); }
     }
 }
 
@@ -49,7 +52,7 @@ impl Drop for MockPageAllocator {
         for page in &self.deallocated {
             let slice = unsafe { core::slice::from_raw_parts(page.as_ptr() as *const u8, PAGE_SIZE) };
             for i in 0..PAGE_SIZE {
-                assert_eq!(slice[i], 0xcc);
+                assert_eq!(slice[i], 0xdd);
             }
             unsafe { dealloc(page.as_ptr() as *mut u8, self.layout); }
         }
@@ -163,7 +166,7 @@ fn test_random_allocation_and_deallocation_sequencial() {
 
     let mut allocated_ptrs = Vec::new();
 
-    let seed = 15936561931664768008;//rand::random();
+    let seed = rand::random();//15936561931664768008;
     let mut rng = SmallRng::seed_from_u64(seed);
 
     println!("Random seed: {}", seed);
@@ -182,21 +185,7 @@ fn test_random_allocation_and_deallocation_sequencial() {
     for (i, &ptr) in allocated_ptrs.iter().enumerate() {
         unsafe {
             println!("Deallocating: {:?}   #{}", ptr, i);
-            if i >= 250 {
-                let mut p = slab_allocator.avail_page;
-                let mut j = 1;
-                while !p.is_null() {
-                    println!("Page #{}: {:?}", j, p);
-                    p = (*p).next;
-                    j += 1;
-                }
-            }
-            if i == 254 {
-                println!("!@#!$");
-            }
-            if (*slab_allocator.avail_page).free == 0xcccc {
-                println!("!@#!$");
-            }
+            check_avail_list(&slab_allocator);
             slab_allocator.dealloc(ptr);
         }
     }
@@ -206,6 +195,22 @@ fn test_random_allocation_and_deallocation_sequencial() {
     assert!(ptr.is_some());
 }
 
+fn check_avail_list(slab: &SlabAllocator<MockPageAllocator>) {
+    let pa = &slab.page_allocator;
+    let mut p = slab.avail_start.next;
+    let mut pp = Vec::new();
+    while !p.is_null() {
+        if !pa.is_vaild(p as *mut u8) {
+            panic!("corrupted avail_page list");
+        }
+        if pp.contains(&p) {
+            panic!("circular loop in avail_page list");
+        }
+        pp.push(p);
+        p = unsafe { (*p).next };
+    }
+}
+
 #[test]
 fn test_random_allocation_and_deallocation_interleaved() {
     let page_allocator = MockPageAllocator::new();
@@ -213,7 +218,7 @@ fn test_random_allocation_and_deallocation_interleaved() {
 
     let mut allocated_ptrs = Vec::new();
 
-    let seed = rand::random();
+    let seed = 7734348131707548111;//rand::random();
     let mut rng = SmallRng::seed_from_u64(seed);
 
     println!("Random seed: {}", seed);
@@ -233,6 +238,7 @@ fn test_random_allocation_and_deallocation_interleaved() {
             let ptr = slab_allocator.alloc().unwrap();
             allocated_ptrs.push(ptr);
         }
+        check_avail_list(&slab_allocator);
     }
 
     // Deallocate left pointers
@@ -240,9 +246,137 @@ fn test_random_allocation_and_deallocation_interleaved() {
         unsafe {
             slab_allocator.dealloc(ptr);
         }
+        check_avail_list(&slab_allocator);
     }
 
     // Ensure allocator can still allocate after random deallocation
+    let ptr = slab_allocator.alloc();
+    assert!(ptr.is_some());
+}
+
+#[test]
+fn test_large_allocation_and_deallocation() {
+    let page_allocator = MockPageAllocator::new();
+    let mut slab_allocator = SlabAllocator::new(128, 16, page_allocator);
+
+    let mut allocated_ptrs = Vec::new();
+
+    // Allocate enough objects to span multiple pages
+    for _ in 0..(PAGE_SIZE / 128 * 5) {
+        let ptr = slab_allocator.alloc().unwrap();
+        allocated_ptrs.push(ptr);
+    }
+
+    // Ensure all pointers are unique
+    for i in 0..allocated_ptrs.len() {
+        for j in (i + 1)..allocated_ptrs.len() {
+            assert_ne!(allocated_ptrs[i], allocated_ptrs[j]);
+        }
+    }
+
+    // Deallocate all objects
+    for ptr in allocated_ptrs {
+        unsafe {
+            slab_allocator.dealloc(ptr);
+        }
+    }
+
+    // Ensure allocator can reuse pages after deallocation
+    let ptr = slab_allocator.alloc();
+    assert!(ptr.is_some());
+}
+
+#[test]
+fn test_interleaved_allocation_and_deallocation() {
+    let page_allocator = MockPageAllocator::new();
+    let mut slab_allocator = SlabAllocator::new(64, 8, page_allocator);
+
+    let mut allocated_ptrs = Vec::new();
+
+    // Interleave allocation and deallocation
+    for i in 0..100 {
+        if i % 3 == 0 && !allocated_ptrs.is_empty() {
+            let ptr = allocated_ptrs.pop().unwrap();
+            unsafe {
+                slab_allocator.dealloc(ptr);
+            }
+        } else {
+            let ptr = slab_allocator.alloc().unwrap();
+            allocated_ptrs.push(ptr);
+        }
+    }
+
+    // Deallocate remaining objects
+    for ptr in allocated_ptrs {
+        unsafe {
+            slab_allocator.dealloc(ptr);
+        }
+    }
+
+    // Ensure allocator can still allocate after interleaved operations
+    let ptr = slab_allocator.alloc();
+    assert!(ptr.is_some());
+}
+
+#[test]
+fn test_fragmentation_handling() {
+    let page_allocator = MockPageAllocator::new();
+    let mut slab_allocator = SlabAllocator::new(128, 16, page_allocator);
+
+    let mut allocated_ptrs = Vec::new();
+
+    // Allocate and deallocate in a pattern to create fragmentation
+    for i in 0..50 {
+        let ptr = slab_allocator.alloc().unwrap();
+        if i % 2 == 0 {
+            unsafe {
+                slab_allocator.dealloc(ptr);
+            }
+        } else {
+            allocated_ptrs.push(ptr);
+        }
+    }
+
+    // Deallocate remaining objects
+    for ptr in allocated_ptrs {
+        unsafe {
+            slab_allocator.dealloc(ptr);
+        }
+    }
+
+    // Ensure allocator can still allocate after fragmentation
+    let ptr = slab_allocator.alloc();
+    assert!(ptr.is_some());
+}
+
+#[test]
+fn test_stress_allocation_and_deallocation() {
+    let page_allocator = MockPageAllocator::new();
+    let mut slab_allocator = SlabAllocator::new(256, 32, page_allocator);
+
+    let mut allocated_ptrs = Vec::new();
+
+    // Stress test with a large number of allocations and deallocations
+    for i in 0..1000 {
+        if i % 5 == 0 && !allocated_ptrs.is_empty() {
+            let ptr = allocated_ptrs.pop().unwrap();
+            unsafe {
+                slab_allocator.dealloc(ptr);
+            }
+        } else {
+            let ptr = slab_allocator.alloc().unwrap();
+            allocated_ptrs.push(ptr);
+        }
+    }
+
+    // Deallocate remaining objects
+    for ptr in allocated_ptrs {
+        unsafe {
+            slab_allocator.dealloc(ptr);
+        }
+    }
+
+    // Ensure allocator can still allocate after stress test
     let ptr = slab_allocator.alloc();
     assert!(ptr.is_some());
 }

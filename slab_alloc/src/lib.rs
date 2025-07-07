@@ -55,7 +55,7 @@
 ///     `PageAllocator`.
 ///
 
-use core::mem::{size_of, align_of};
+use core::mem::{align_of, size_of, MaybeUninit};
 use core::ptr::{NonNull, null_mut, write_bytes};
 use core::slice::from_raw_parts;
 
@@ -78,15 +78,68 @@ pub struct SlabAllocator<PA: PageAllocator> {
     payload_align: u16,
     front_size: u16,                // size between slot object's start and payload's start.
     object_size: u16,               // size of the total slot object.
-    avail_page: *mut PageHeader,    // pointer to the first available page in the available page list.
+    avail_start: PageHeader,        // dummy PageHeader, next pointer to the first available page in the available page list.
     page_allocator: PA,
 }
 
 #[repr(C)]
 struct PageHeader {
+    prev: *mut PageHeader,
     next: *mut PageHeader,
     free: u16,
     count: u16,
+}
+
+fn page_list_is_tail(page: &PageHeader) -> bool {
+    page.next.is_null()
+}
+
+fn page_list_is_singleton(page: &PageHeader) -> bool {
+    page.next.is_null() || page.prev.is_null()
+}
+
+// Safety: page is tail, new_page is valid and head
+unsafe fn page_list_push_tail(page: &mut PageHeader, new_page: *mut PageHeader) {
+    page.next = new_page;
+    unsafe { (*new_page).prev = &mut *page; }
+}
+
+fn page_list_pop_next(page: &mut PageHeader) -> *mut PageHeader {
+    let n = page.next;
+    if !n.is_null() {
+        unsafe {
+            page.next = (*n).next;
+            if !page.next.is_null() {
+                (*page.next).prev = page;
+            }
+            (*n).prev = null_mut();
+            (*n).next = null_mut();
+        }
+    }
+    n
+}
+
+// Safety: new_page is valid and singleton
+unsafe fn page_list_push_next(page: &mut PageHeader, new_page: *mut PageHeader) {
+    unsafe {
+        (*new_page).next = page.next;
+        (*new_page).prev = page;
+        if !page.next.is_null() {
+            (*page.next).prev = new_page;
+        }
+        page.next = new_page;
+    }
+}
+
+fn page_list_remove(page: &mut PageHeader) {
+    unsafe {
+        let n = page.next;
+        let p = page.prev;
+        if !n.is_null() { (*n).prev = p; }
+        if !p.is_null() { (*p).next = n; }
+        page.next = null_mut();
+        page.prev = null_mut();
+    }
 }
 
 #[repr(C)]
@@ -122,14 +175,22 @@ impl<PA: PageAllocator> SlabAllocator<PA> {
             payload_align,
             front_size,
             object_size,
-            avail_page: null_mut(),
+            avail_start: PageHeader {
+                prev: null_mut(),
+                next: null_mut(),
+                free: 0,
+                count: 0,
+            },
             page_allocator,
         }
     }
 
     pub fn alloc(&mut self) -> Option<NonNull<u8>> {
-        if self.avail_page.is_null() {
-            self.avail_page = self.alloc_page()?;
+        if page_list_is_tail(&self.avail_start) {
+            let new_page = self.alloc_page()?;
+            unsafe {
+                page_list_push_tail(&mut self.avail_start, new_page);
+            }
         }
 
         Some(unsafe { self.alloc_from_free() })
@@ -137,7 +198,7 @@ impl<PA: PageAllocator> SlabAllocator<PA> {
 
     // Safety: self.avail_page is not null
     unsafe fn alloc_from_free(&mut self) -> NonNull<u8> {
-        let page = self.avail_page;
+        let page = self.avail_start.next;
         unsafe {
             assert_ne!((*page).free, 0, "slab is poisoned");
 
@@ -156,28 +217,40 @@ impl<PA: PageAllocator> SlabAllocator<PA> {
                 (*object).next = 0;
             }
             else {
-                self.avail_page = (*page).next;
                 (*page).free = 0;
-                (*page).next = null_mut();
+                self.kick_full_page();
             }
 
             NonNull::new_unchecked((addr + self.front_size as usize) as *mut u8)
         }
     }
 
-    fn alloc_page(&mut self) -> Option<*mut PageHeader> {
-        let addr = self.page_allocator.allocate()?.as_ptr() as usize;
-        let header = addr as *mut PageHeader;
+    unsafe fn kick_full_page(&mut self) {
+        let kicked = page_list_pop_next(&mut self.avail_start);
+        assert!(!kicked.is_null(), "slab is poisoned");
+    }
 
+    fn alloc_page(&mut self) -> Option<*mut PageHeader> {
         let mut offset = self.page_offset();
 
         let header_size = size_of::<ObjectHeader>();
         let right_offset = (self.front_size + self.payload_size) as usize;
 
+        let addr = self.page_allocator.allocate()?.as_ptr() as usize;
+        let header = {
+            let header_uninit = addr as *mut MaybeUninit<PageHeader>;
+            unsafe {
+                (*header_uninit).write(PageHeader {
+                    prev: null_mut(),
+                    next: null_mut(),
+                    free: offset,
+                    count: 0,
+                });
+            }
+            header_uninit as *mut PageHeader
+        };
+
         unsafe {
-            (*header).next = null_mut();
-            (*header).free = offset;
-            (*header).count = 0;
             loop {
                 let obj_addr = addr + offset as usize;
                 let object = obj_addr as *mut ObjectHeader;
@@ -227,27 +300,26 @@ impl<PA: PageAllocator> SlabAllocator<PA> {
             }
             (*page).free = (addr - page as usize) as u16;
 
-            /*if (*page).count == 0 {
-                if self.avail_page == page {
-                    self.avail_page = (*page).next;
-                }
-                else {
-                    (*(*page).prev).next = (*page).next;
-                }
-                self.page_allocator.deallocate(NonNull::new_unchecked(page as *mut [u8; PAGE_SIZE]));
+            if (*page).count == 0 {
+                self.dealloc_page(page);
             }
-            else if self.avail_page != page {
-                let p = (*page).prev;
-                let n = (*page).next;
-                if !p.is_null() { (*p).next = n; }
-                if !n.is_null() { (*n).prev = p; }
-                (*page).prev = null_mut();
-                (*page).next = self.avail_page;
-                if self.avail_page != null_mut() {
-                    (*self.avail_page).prev = page;
-                }
-                self.avail_page = page;
-            }*/
+            else if self.avail_start.next != page {
+                self.insert_avail_page(page);
+            }
+        }
+    }
+
+    unsafe fn dealloc_page(&mut self, page: *mut PageHeader) {
+        unsafe {
+            page_list_remove(&mut *page);
+            self.page_allocator.deallocate(NonNull::new_unchecked(page as *mut [u8; PAGE_SIZE]));
+        }
+    }
+
+    unsafe fn insert_avail_page(&mut self, page: *mut PageHeader) {
+        unsafe {
+            assert!(page_list_is_singleton(&mut *page), "slab is poisoned");
+            page_list_push_next(&mut self.avail_start, page);
         }
     }
 
